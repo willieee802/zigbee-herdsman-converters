@@ -1731,7 +1731,7 @@ const fromZigbee1 = {
                 case 0: // auto
                     return {system_mode: 'auto', away_mode: 'OFF', preset: 'schedule'};
                 default:
-                    meta.logger.warn('zigbee-herdsman-converters:zsThermostat: ' +
+                    meta.logger.warn('@willieee802/zigbee-herdsman-converters:zsThermostat: ' +
                         `preset ${value} is not recognized.`);
                     break;
                 }
@@ -4123,7 +4123,7 @@ const fromZigbee1 = {
                 if (thermostatScheduleMode.hasOwnProperty(value)) {
                     return {schedule_mode: thermostatScheduleMode[value]};
                 } else {
-                    meta.logger.warn('zigbee-herdsman-converters:SaswellThermostat: ' +
+                    meta.logger.warn('@willieee802/zigbee-herdsman-converters:SaswellThermostat: ' +
                         `Unknown schedule mode ${value}`);
                 }
                 break;
@@ -4239,7 +4239,7 @@ const fromZigbee1 = {
                         result.system_mode = 'off';
                         break;
                     default:
-                        meta.logger.warn('zigbee-herdsman-converters:evanell_thermostat: ' +
+                        meta.logger.warn('@willieee802/zigbee-herdsman-converters:evanell_thermostat: ' +
                           `Mode ${value} is not recognized.`);
                         break;
                     }
@@ -4289,7 +4289,7 @@ const fromZigbee1 = {
                 case 2: // auto
                     return {system_mode: 'auto', away_mode: 'OFF', preset: 'none'};
                 default:
-                    meta.logger.warn('zigbee-herdsman-converters:eTopThermostat: ' +
+                    meta.logger.warn('@willieee802/zigbee-herdsman-converters:eTopThermostat: ' +
                         `preset ${value} is not recognized.`);
                     break;
                 }
@@ -4842,7 +4842,7 @@ const fromZigbee1 = {
                 case 2: // down_delete
                     return {border: 'down_delete'};
                 default:
-                    meta.logger.warn('zigbee-herdsman-converters:ZM_AM_02: ' +
+                    meta.logger.warn('@willieee802/zigbee-herdsman-converters:ZM_AM_02: ' +
                     `Mode ${value} is not recognized.`);
                     break;
                 }
@@ -4866,7 +4866,7 @@ const fromZigbee1 = {
                 case 1: // night
                     return {mode: 'night'};
                 default:
-                    meta.logger.warn('zigbee-herdsman-converters:ZM_AM_02: ' +
+                    meta.logger.warn('@willieee802/zigbee-herdsman-converters:ZM_AM_02: ' +
                         `Mode ${value} is not recognized.`);
                     break;
                 }

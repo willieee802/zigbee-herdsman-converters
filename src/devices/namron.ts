@@ -1,5 +1,5 @@
 import {Definition, Fz, Tz, KeyValue} from '../lib/types';
-import {Zcl} from 'zigbee-herdsman';
+import {Zcl} from '@willieee802/zigbee-herdsman';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import tz from '../converters/toZigbee';

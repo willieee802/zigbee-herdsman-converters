@@ -4,7 +4,7 @@ import tz from '../converters/toZigbee';
 import * as reporting from '../lib/reporting';
 import {Extend, Definition, Fz, Reporting} from 'src/lib/types';
 import {getFromLookup} from '../lib/utils';
-import {KeyValue} from 'zigbee-herdsman/dist/controller/tstype';
+import {KeyValue} from '@willieee802/zigbee-herdsman/dist/controller/tstype';
 const e = exposes.presets;
 
 const lockExtend = (meta={}, lockStateOptions: Reporting.Override=null, binds=['closuresDoorLock', 'genPowerCfg']): Extend => {

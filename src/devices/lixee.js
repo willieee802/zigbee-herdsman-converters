@@ -11,7 +11,7 @@ const e = exposes.presets;
 const utils = require('../lib/utils');
 const ota = require('../lib/ota');
 const {Buffer} = require('buffer');
-const herdsman = require('zigbee-herdsman');
+const herdsman = require('@willieee802/zigbee-herdsman');
 
 
 /* Start ZiPulses */

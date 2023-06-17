@@ -6,7 +6,7 @@ import * as reporting from '../lib/reporting';
 import extend from '../lib/extend';
 const e = exposes.presets;
 const ea = exposes.access;
-import {Zcl} from 'zigbee-herdsman';
+import {Zcl} from '@willieee802/zigbee-herdsman';
 import {KeyValueAny, Fz, Tz, Definition} from '../lib/types';
 
 const manufacturerOptions = {manufacturerCode: Zcl.ManufacturerCode._4_NOKS};

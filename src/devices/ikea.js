@@ -10,7 +10,7 @@ const extend = require('../lib/extend');
 const globalStore = require('../lib/store');
 const e = exposes.presets;
 const ea = exposes.access;
-const herdsman = require('zigbee-herdsman');
+const herdsman = require('@willieee802/zigbee-herdsman');
 const {
     calibrateAndPrecisionRoundOptions, postfixWithEndpointName, getMetaValue, precisionRound,
 } = require('../lib/utils');

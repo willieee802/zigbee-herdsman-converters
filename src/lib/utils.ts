@@ -1,5 +1,5 @@
 import * as globalStore from './store';
-import {Zcl} from 'zigbee-herdsman';
+import {Zcl} from '@willieee802/zigbee-herdsman';
 import {Definition, Fz, KeyValue, KeyValueAny, Logger, Publish, Tz, Zh} from './types';
 
 export function isLegacyEnabled(options: KeyValue) {

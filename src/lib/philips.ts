@@ -5,7 +5,7 @@ import * as exposes from './exposes';
 import tz from '../converters/toZigbee';
 import * as libColor from './color';
 import * as utils from './utils';
-import {Zcl} from 'zigbee-herdsman';
+import {Zcl} from '@willieee802/zigbee-herdsman';
 import * as globalStore from './store';
 import {Extend, Fz, KeyValue, KeyValueAny, Tz} from './types';
 const ea = exposes.access;

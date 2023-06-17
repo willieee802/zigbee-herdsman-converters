@@ -549,7 +549,7 @@ describe('index.js', () => {
         const files = fs.readdirSync('src/devices');
         for (const file of files) {
             const content = fs.readFileSync(`src/devices/${file}`, {encoding: 'utf-8'});
-            expect(content).not.toContain(`require('zigbee-herdsman-converters`);
+            expect(content).not.toContain(`require('@willieee802/zigbee-herdsman-converters`);
         }
     });
 

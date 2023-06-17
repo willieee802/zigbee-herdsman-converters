@@ -2,7 +2,7 @@
 
 const globalStore = require('../lib/store');
 const utils = require('../lib/utils');
-const herdsman = require('zigbee-herdsman');
+const herdsman = require('@willieee802/zigbee-herdsman');
 const legacy = require('../lib/legacy');
 const light = require('../lib/light');
 const constants = require('../lib/constants');

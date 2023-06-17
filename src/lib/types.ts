@@ -4,7 +4,7 @@ import type {
     Device as ZHDevice,
     Endpoint as ZHEndpoint,
     Group as ZHGroup,
-} from 'zigbee-herdsman/dist/controller/model';
+} from '@willieee802/zigbee-herdsman/dist/controller/model';
 
 import * as exposes from './exposes';
 
