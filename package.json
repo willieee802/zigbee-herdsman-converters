@@ -39,7 +39,7 @@
     "buffer-crc32": "^0.2.13",
     "https-proxy-agent": "^7.0.0",
     "tar-stream": "^3.0.0",
-    "@willieee802/zigbee-herdsman": "^0.15.1"
+    "@willieee802/zigbee-herdsman": "^0.15.2"
   },
   "devDependencies": {
     "@types/buffer-crc32": "^0.2.2",
