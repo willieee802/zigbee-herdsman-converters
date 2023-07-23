@@ -433,6 +433,26 @@ const tarifsDef = {
             'PJOURF+1',
             'PPOINTE1',
         ]},
+    stand_TEMPO: {
+        fname: 'Standard - TEMPO',
+        currentTarf: 'H PLEINE/CREUSE', excluded: [
+            'EASF07',
+            'EASF08',
+            'EASF09',
+            'EASF10',
+            'EASD03',
+            'EASD04',
+            'DPM1',
+            'DPM2',
+            'DPM3',
+            'FPM1',
+            'FPM2',
+            'FPM3',
+            'NJOURF',
+            'NJOURF+1',
+            'PJOURF+1',
+            'PPOINTE1',
+        ]},
 };
 
 
@@ -564,7 +584,7 @@ const exposedData = [
     {cluster: clustersDef._0xFF66, att: 'daysNumberNextCalendar', reportable: false, onlyProducer: false, linkyPhase: linkyPhaseDef.all, linkyMode: linkyModeDef.standard, exposes: exposes.numeric('NJOURF+1', ea.STATE).withProperty('days_number_next_calendar').withDescription('Next day number supplier calendar')},
     {cluster: clustersDef._0xFF66, att: 'daysProfileCurrentCalendar', reportable: false, onlyProducer: false, linkyPhase: linkyPhaseDef.all, linkyMode: linkyModeDef.standard, exposes: exposes.text('PJOURF+1', ea.STATE).withProperty('days_profile_current_calendar').withDescription('Profile of the next supplier calendar day')},
     {cluster: clustersDef._0xFF66, att: 'daysProfileNextCalendar', reportable: false, onlyProducer: false, linkyPhase: linkyPhaseDef.all, linkyMode: linkyModeDef.standard, exposes: exposes.text('PPOINTE1', ea.STATE).withProperty('days_profile_next_calendar').withDescription('Profile of the next check-in day')},
-    {cluster: clustersDef._0xFF66, att: 'motDEtat', reportable: true, onlyProducer: false, linkyPhase: linkyPhaseDef.all, linkyMode: linkyModeDef.legacy, exposes: exposes.text('MOTDETAT', ea.STATE).withProperty('MOTDETAT').withDescription('Meter Status Word')},
+    {cluster: clustersDef._0xFF66, att: 'motDEtat', reportable: false, onlyProducer: false, linkyPhase: linkyPhaseDef.all, linkyMode: linkyModeDef.legacy, exposes: exposes.text('MOTDETAT', ea.STATE).withProperty('MOTDETAT').withDescription('Meter Status Word')},
 ];
 
 function getCurrentConfig(device, options, logger=console) {
@@ -653,6 +673,9 @@ function getCurrentConfig(device, options, logger=console) {
         break;
     case linkyMode == linkyModeDef.standard && tarifsDef.stand_BASE.currentTarf:
         myExpose = myExpose.filter((a) => !tarifsDef.stand_BASE.excluded.includes(a.exposes.name));
+        break;
+    case linkyMode == linkyModeDef.standard && tarifsDef.stand_TEMPO.currentTarf:
+        myExpose = myExpose.filter((a) => !tarifsDef.stand_TEMPO.excluded.includes(a.exposes.name));
         break;
     default:
         break;

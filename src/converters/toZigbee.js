@@ -2282,10 +2282,10 @@ const converters = {
     xiaomi_switch_power_outage_memory: {
         key: ['power_outage_memory'],
         convertSet: async (entity, key, value, meta) => {
-            if (['SP-EUC01', 'ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'SSM-U01', 'SSM-U02', 'DLKZMK11LM', 'DLKZMK12LM',
-                'WS-EUK01', 'WS-EUK02', 'WS-EUK03', 'WS-EUK04', 'QBKG19LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM', 'QBKG28LM', 'QBKG29LM',
+            if (['SP-EUC01', 'ZNCZ04LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'SSM-U01', 'SSM-U02', 'DLKZMK11LM', 'DLKZMK12LM',
+                'WS-EUK01', 'WS-EUK02', 'WS-EUK03', 'WS-EUK04', 'QBKG19LM', 'QBKG18LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM', 'QBKG28LM', 'QBKG29LM',
                 'QBKG31LM', 'QBKG34LM', 'QBKG38LM', 'QBKG39LM', 'QBKG40LM', 'QBKG41LM', 'ZNDDMK11LM', 'ZNLDP13LM', 'ZNQBKG31LM',
-                'WS-USC02', 'WS-USC03', 'WS-USC04', 'ZNQBKG24LM',
+                'WS-USC02', 'WS-USC03', 'WS-USC04', 'ZNQBKG24LM', 'ZNQBKG25LM',
             ].includes(meta.mapped.model)) {
                 await entity.write('aqaraOpple', {0x0201: {value: value ? 1 : 0, type: 0x10}}, manufacturerOptions.xiaomi);
             } else if (['ZNCZ02LM', 'QBCZ11LM', 'LLKZMK11LM'].includes(meta.mapped.model)) {
@@ -2295,7 +2295,7 @@ const converters = {
 
                 await entity.write('genBasic', {0xFFF0: {value: payload[0], type: 0x41}}, manufacturerOptions.xiaomi);
                 await entity.write('genBasic', {0xFFF0: {value: payload[1], type: 0x41}}, manufacturerOptions.xiaomi);
-            } else if (['ZNCZ11LM'].includes(meta.mapped.model)) {
+            } else if (['ZNCZ11LM', 'ZNCZ12LM'].includes(meta.mapped.model)) {
                 const payload = value ?
                     [0xaa, 0x80, 0x05, 0xd1, 0x47, 0x00, 0x01, 0x10, 0x01] :
                     [0xaa, 0x80, 0x05, 0xd1, 0x47, 0x01, 0x01, 0x10, 0x00];
@@ -2307,13 +2307,13 @@ const converters = {
             return {state: {power_outage_memory: value}};
         },
         convertGet: async (entity, key, meta) => {
-            if (['SP-EUC01', 'ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'SSM-U01', 'SSM-U02', 'DLKZMK11LM', 'DLKZMK12LM',
-                'WS-EUK01', 'WS-EUK02', 'WS-EUK03', 'WS-EUK04', 'QBKG19LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM', 'QBKG28LM', 'QBKG29LM',
+            if (['SP-EUC01', 'ZNCZ04LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'SSM-U01', 'SSM-U02', 'DLKZMK11LM', 'DLKZMK12LM',
+                'WS-EUK01', 'WS-EUK02', 'WS-EUK03', 'WS-EUK04', 'QBKG19LM', 'QBKG18LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM', 'QBKG28LM', 'QBKG29LM',
                 'QBKG31LM', 'QBKG34LM', 'QBKG38LM', 'QBKG39LM', 'QBKG40LM', 'QBKG41LM', 'ZNDDMK11LM', 'ZNLDP13LM', 'ZNQBKG31LM',
-                'WS-USC02', 'WS-USC03', 'WS-USC04', 'ZNQBKG24LM',
+                'WS-USC02', 'WS-USC03', 'WS-USC04', 'ZNQBKG24LM', 'ZNQBKG25LM',
             ].includes(meta.mapped.model)) {
                 await entity.read('aqaraOpple', [0x0201]);
-            } else if (['ZNCZ02LM', 'QBCZ11LM', 'ZNCZ11LM'].includes(meta.mapped.model)) {
+            } else if (['ZNCZ02LM', 'QBCZ11LM', 'ZNCZ11LM', 'ZNCZ12LM'].includes(meta.mapped.model)) {
                 await entity.read('aqaraOpple', [0xFFF0]);
             } else {
                 throw new Error('Not supported');
@@ -2427,9 +2427,9 @@ const converters = {
     xiaomi_led_disabled_night: {
         key: ['led_disabled_night'],
         convertSet: async (entity, key, value, meta) => {
-            if (['ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'QBKG19LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM',
+            if (['ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ14LM', 'QBCZ15LM', 'QBKG19LM', 'QBKG18LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM',
                 'QBKG28LM', 'QBKG29LM', 'QBKG31LM', 'QBKG34LM', 'DLKZMK11LM', 'SSM-U01', 'WS-EUK01', 'WS-EUK02',
-                'WS-EUK03', 'WS-EUK04', 'SP-EUC01', 'ZNQBKG24LM'].includes(meta.mapped.model)) {
+                'WS-EUK03', 'WS-EUK04', 'SP-EUC01', 'ZNQBKG24LM', 'ZNQBKG25LM'].includes(meta.mapped.model)) {
                 await entity.write('aqaraOpple', {0x0203: {value: value ? 1 : 0, type: 0x10}}, manufacturerOptions.xiaomi);
             } else if (['ZNCZ11LM'].includes(meta.mapped.model)) {
                 const payload = value ?
@@ -2443,9 +2443,9 @@ const converters = {
             return {state: {led_disabled_night: value}};
         },
         convertGet: async (entity, key, meta) => {
-            if (['ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ15LM', 'QBCZ14LM', 'QBKG19LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM',
+            if (['ZNCZ04LM', 'ZNCZ12LM', 'ZNCZ15LM', 'QBCZ15LM', 'QBCZ14LM', 'QBKG19LM', 'QBKG18LM', 'QBKG20LM', 'QBKG25LM', 'QBKG26LM',
                 'QBKG28LM', 'QBKG29LM', 'QBKG31LM', 'QBKG34LM', 'DLKZMK11LM', 'SSM-U01', 'WS-EUK01', 'WS-EUK02',
-                'WS-EUK03', 'WS-EUK04', 'SP-EUC01', 'ZNQBKG24LM'].includes(meta.mapped.model)) {
+                'WS-EUK03', 'WS-EUK04', 'SP-EUC01', 'ZNQBKG24LM', 'ZNQBKG25LM'].includes(meta.mapped.model)) {
                 await entity.read('aqaraOpple', [0x0203], manufacturerOptions.xiaomi);
             } else {
                 throw new Error('Not supported');
@@ -4640,7 +4640,7 @@ const converters = {
     TS0210_sensitivity: {
         key: ['sensitivity'],
         convertSet: async (entity, key, value, meta) => {
-            utils.assertNumber(value, 'sensitivity');
+            value = utils.toNumber(value, 'sensitivity');
             await entity.write('ssIasZone', {currentZoneSensitivityLevel: value});
             return {state: {sensitivity: value}};
         },

@@ -1,10 +1,11 @@
-import {Definition, Fz} from '../lib/types';
+import {Definition, Fz, Tz} from '../lib/types';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import * as reporting from '../lib/reporting';
 import extend from '../lib/extend';
 import tz from '../converters/toZigbee';
 const e = exposes.presets;
+const ea = exposes.access;
 
 const fzLocal = {
     LDSENK08: {
@@ -22,6 +23,16 @@ const fzLocal = {
     } as Fz.Converter,
 };
 
+const tzLocal = {
+    LDSENK08_sensitivity: {
+        key: ['sensitivity'],
+        convertSet: async (entity, key, value, meta) => {
+            await entity.write('ssIasZone', {0x0013: {value, type: 0x20}});
+            return {state: {sensitivity: value}};
+        },
+    } as Tz.Converter,
+};
+
 const definitions: Definition[] = [
     {
         zigbeeModel: ['LDSENK08'],
@@ -29,8 +40,9 @@ const definitions: Definition[] = [
         vendor: 'ADEO',
         description: 'ENKI LEXMAN wireless smart door window sensor with vibration',
         fromZigbee: [fzLocal.LDSENK08, fz.battery],
-        toZigbee: [],
-        exposes: [e.battery_low(), e.contact(), e.vibration(), e.tamper(), e.battery()],
+        toZigbee: [tzLocal.LDSENK08_sensitivity],
+        exposes: [e.battery_low(), e.contact(), e.vibration(), e.tamper(), e.battery(),
+            e.numeric('sensitivity', ea.STATE_SET).withValueMin(0).withValueMax(4).withDescription('Sensitivity of the motion sensor')],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg']);
@@ -122,6 +134,20 @@ const definitions: Definition[] = [
         vendor: 'ADEO',
         description: 'ENKI LEXMAN E14 LED white',
         extend: extend.light_onoff_brightness_colortemp({colorTempRange: [153, 454]}),
+    },
+    {
+        zigbeeModel: ['ZBEK-22'],
+        model: 'BD05C-FL-21-G-ENK',
+        vendor: 'ADEO',
+        description: 'ENKI RGBCCT lamp',
+        extend: extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 370]}),
+    },
+    {
+        zigbeeModel: ['ZBEK-28'],
+        model: 'PEZ1-042-1020-C1D1',
+        vendor: 'ADEO',
+        description: 'Gdansk ENKI',
+        extend: extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 370]}),
     },
     {
         zigbeeModel: ['ZBEK-5'],
@@ -283,6 +309,21 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {default: 1};
         },
+    },
+    {
+        zigbeeModel: ['SIN-4-RS-20_LEX'],
+        model: 'SIN-4-RS-20_LEX',
+        vendor: 'ADEO',
+        description: 'Roller shutter controller (Leroy Merlin version)',
+        fromZigbee: [fz.cover_position_tilt],
+        toZigbee: [tz.cover_state, tz.cover_position_tilt],
+        configure: async (device, coordinatorEndpoint, logger) => {
+            const endpoint = device.getEndpoint(1);
+            await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'closuresWindowCovering']);
+            await reporting.currentPositionLiftPercentage(endpoint);
+            await reporting.currentPositionTiltPercentage(endpoint);
+        },
+        exposes: [e.cover_position()],
     },
 ];
 

@@ -60,8 +60,8 @@ function getDataValue(dpValue: Tuya.DpValue) {
 function convertDecimalValueTo4ByteHexArray(value: number) {
     const hexValue = Number(value).toString(16).padStart(8, '0');
     const chunk1 = hexValue.substring(0, 2);
-    const chunk2 = hexValue.substring(2, 2);
-    const chunk3 = hexValue.substring(4, 2);
+    const chunk2 = hexValue.substring(2, 4);
+    const chunk3 = hexValue.substring(4, 6);
     const chunk4 = hexValue.substring(6);
     return [chunk1, chunk2, chunk3, chunk4].map((hexVal) => parseInt(hexVal, 16));
 }
@@ -80,8 +80,8 @@ export async function onEventMeasurementPoll(type: OnEventType, data: OnEventDat
         clearTimeout(globalStore.getValue(device, 'measurement_poll'));
         globalStore.clearValue(device, 'measurement_poll');
     } else if (!globalStore.hasValue(device, 'measurement_poll')) {
-        const seconds = options && options.measurement_poll_interval ? options.measurement_poll_interval : 60;
-        utils.assertNumber(seconds, 'measurement_poll_interval');
+        const seconds = utils.toNumber(
+            options && options.measurement_poll_interval ? options.measurement_poll_interval : 60, 'measurement_poll_interval');
         if (seconds === -1) return;
         const setTimer = () => {
             const timer = setTimeout(async () => {
@@ -278,6 +278,14 @@ const tuyaExposes = {
         .withDescription('Do not disturb mode, when enabled this function will keep the light OFF after a power outage'),
     colorPowerOnBehavior: () => e.enum('color_power_on_behavior', ea.STATE_SET, ['initial', 'previous', 'cutomized'])
         .withDescription('Power on behavior state'),
+    switchMode: () => e.enum('switch_mode', ea.STATE_SET, ['switch', 'scene'])
+        .withDescription('Sets the mode of the switch to act as a switch or as a scene'),
+    lightMode: () => e.enum('light_mode', ea.STATE_SET, ['normal', 'on', 'off', 'flash'])
+        .withDescription(`'Sets the indicator mode of l1.
+        Normal: Orange while off and white while on.
+        On: Always white. Off: Always orange.
+        Flash: Flashes white when triggered.
+        Note: Orange light will turn off after light off delay, white light always stays on. Light mode updates on next state change.'`),
 };
 export {tuyaExposes as exposes};
 
@@ -381,6 +389,7 @@ export const valueConverter = {
     trueFalseEnum0: valueConverterBasic.trueFalse(new Enum(0)),
     onOff: valueConverterBasic.lookup({'ON': true, 'OFF': false}),
     powerOnBehavior: valueConverterBasic.lookup({'off': 0, 'on': 1, 'previous': 2}),
+    powerOnBehaviorEnum: valueConverterBasic.lookup({'off': new Enum(0), 'on': new Enum(1), 'previous': new Enum(2)}),
     lightType: valueConverterBasic.lookup({'led': 0, 'incandescent': 1, 'halogen': 2}),
     countdown: valueConverterBasic.raw(),
     scale0_254to0_1000: valueConverterBasic.scale(0, 254, 0, 1000),
@@ -390,6 +399,8 @@ export const valueConverter = {
     batteryState: valueConverterBasic.lookup({'low': 0, 'medium': 1, 'high': 2}),
     divideBy10: valueConverterBasic.divideBy(10),
     divideBy1000: valueConverterBasic.divideBy(1000),
+    switchMode: valueConverterBasic.lookup({'switch': new Enum(0), 'scene': new Enum(1)}),
+    lightMode: valueConverterBasic.lookup({'normal': new Enum(0), 'on': new Enum(1), 'off': new Enum(2), 'flash': new Enum(3)}),
     raw: valueConverterBasic.raw(),
     setLimit: {
         to: (v: number) => {
@@ -439,6 +450,16 @@ export const valueConverter = {
                     [`power_${phase}`]: (buf[7] | buf[6] << 8)};
             },
         };
+    },
+    phaseVariant3: {
+        from: (v: string) => {
+            const buf = Buffer.from(v, 'base64');
+            return {
+                voltage: ((buf[0] << 8) | buf[1]) / 10,
+                current: ((buf[2] << 16) | (buf[3] << 8) | buf[4]) / 1000,
+                power: ((buf[5] << 16) | (buf[6] << 8) | buf[7]),
+            };
+        },
     },
     threshold: {
         from: (v: string) => {
@@ -743,13 +764,13 @@ const tuyaTz = {
     min_brightness: {
         key: ['min_brightness'],
         convertSet: async (entity, key, value, meta) => {
-            utils.assertNumber(value, `min_brightness`);
-            const minValueHex = value.toString(16);
+            const number = utils.toNumber(value, `min_brightness`);
+            const minValueHex = number.toString(16);
             const maxValueHex = 'ff';
             const minMaxValue = parseInt(`${minValueHex}${maxValueHex}`, 16);
             const payload = {0xfc00: {value: minMaxValue, type: 0x21}};
             await entity.write('genLevelCtrl', payload, {disableDefaultResponse: true});
-            return {state: {min_brightness: value}};
+            return {state: {min_brightness: number}};
         },
         convertGet: async (entity, key, meta) => {
             await entity.read('genLevelCtrl', [0xfc00]);
@@ -776,6 +797,7 @@ const tuyaTz = {
             'min_temperature', 'max_temperature', 'window_detection', 'boost_heating', 'alarm_ringtone', 'alarm_time', 'fan_speed',
             'reverse_direction', 'border', 'click_control', 'motor_direction', 'opening_mode', 'factory_reset', 'set_upper_limit', 'set_bottom_limit',
             'motor_speed', 'timer', 'reset_frost_lock', 'schedule_periodic', 'schedule_weekday', 'backlight_mode', 'calibration', 'motor_steering',
+            'mode', 'lower', 'upper', 'delay', 'reverse', 'touch', 'program', 'light_mode', 'switch_mode',
             ...[1, 2, 3, 4, 5, 6].map((no) => `schedule_slot_${no}`), 'minimum_range', 'maximum_range', 'detection_delay', 'fading_time',
         ],
         convertSet: async (entity, key, value, meta) => {
@@ -966,7 +988,7 @@ const tuyaFz = {
             for (const dpValue of msg.data.dpValues) {
                 const dpId = dpValue.dp;
                 const dpEntry = datapoints.find((d) => d[0] === dpId);
-                if (dpEntry?.[2].from) {
+                if (dpEntry?.[2]?.from) {
                     const value = getDataValue(dpValue);
                     if (dpEntry[1]) {
                         result[dpEntry[1]] = dpEntry[2].from(value, meta, options, publish);
@@ -983,8 +1005,8 @@ const tuyaFz = {
             const keys = Object.keys(utils.calibrateAndPrecisionRoundOptionsDefaultPrecision);
             for (const entry of Object.entries(result)) {
                 if (keys.includes(entry[0])) {
-                    utils.assertNumber(entry[1], entry[0]);
-                    result[entry[0]] = utils.calibrateAndPrecisionRoundOptions(entry[1], options, entry[0]);
+                    const number = utils.toNumber(entry[1], entry[0]);
+                    result[entry[0]] = utils.calibrateAndPrecisionRoundOptions(number, options, entry[0]);
                 }
             }
             return result;

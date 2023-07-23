@@ -395,8 +395,8 @@ const tzLocal = {
                     {manufacturerCode: 0x115f});
                 break;
             case 'away_preset_temperature':
-                utils.assertNumber(value, 'away_preset_temperature');
-                await entity.write('aqaraOpple', {0x0279: {value: Math.round(value * 100), type: 0x23}}, {manufacturerCode: 0x115f});
+                await entity.write('aqaraOpple', {0x0279: {value: Math.round(utils.toNumber(value, 'away_preset_temperature') * 100), type: 0x23}},
+                    {manufacturerCode: 0x115f});
                 break;
             case 'sensor': {
                 utils.assertEndpoint(entity);
@@ -460,8 +460,8 @@ const tzLocal = {
             case 'sensor_temp':
                 if (meta.state['sensor'] === 'external') {
                     const temperatureBuf = Buffer.alloc(4);
-                    utils.assertNumber(value);
-                    temperatureBuf.writeFloatBE(Math.round(value * 100));
+                    const number = utils.toNumber(value);
+                    temperatureBuf.writeFloatBE(Math.round(number * 100));
 
                     const params = [...sensor, 0x00, 0x01, 0x00, 0x55, ...temperatureBuf];
                     const data = [...(aqaraHeader(0x12, params, 0x05)), ...params];
@@ -1608,6 +1608,24 @@ const definitions: Definition[] = [
         ota: ota.zigbeeOTA,
     },
     {
+        zigbeeModel: ['lumi.switch.b2lacn01'],
+        model: 'QBKG18LM',
+        vendor: 'Xiaomi',
+        description: 'Aqara T1 double rocker without neutral',
+        fromZigbee: [fz.on_off, fz.xiaomi_power, fz.xiaomi_multistate_action, fz.aqara_opple],
+        toZigbee: [tz.on_off, tz.xiaomi_switch_operation_mode_opple, tz.xiaomi_switch_power_outage_memory,
+            tz.xiaomi_led_disabled_night, tz.xiaomi_flip_indicator_light],
+        exposes: [
+            e.switch(), e.action(['single', 'double']), e.power().withAccess(ea.STATE), e.energy(),
+            e.voltage(), e.device_temperature().withAccess(ea.STATE),
+            e.power_outage_memory(), e.led_disabled_night(), e.flip_indicator_light(),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for left button'),
+        ],
+        onEvent: preventReset,
+        ota: ota.zigbeeOTA,
+    },
+    {
         zigbeeModel: ['lumi.switch.b1nacn01'],
         model: 'QBKG19LM',
         vendor: 'Xiaomi',
@@ -1893,7 +1911,7 @@ const definitions: Definition[] = [
                             .withFeature(e.numeric('y', ea.SET)
                                 .withValueMin(fp1.constants.region_config_zoneY_min)
                                 .withValueMax(fp1.constants.region_config_zoneY_max)),
-                    ),
+                    ).withDescription('list of dictionaries in the format {"x": 1, "y": 1}, {"x": 2, "y": 1}'),
                 ),
             e.composite('region_delete', 'region_delete', ea.SET)
                 .withDescription('Region definition to be deleted from the device.')
@@ -3301,6 +3319,35 @@ const definitions: Definition[] = [
             e.power_outage_memory(), e.led_disabled_night(), e.flip_indicator_light(),
         ],
         onEvent: preventReset,
+        ota: ota.zigbeeOTA,
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn030'],
+        model: 'ZNQBKG25LM',
+        vendor: 'Xiaomi',
+        description: 'Aqara smart wall switch H1M (with neutral, double rocker)',
+        fromZigbee: [fz.on_off, fz.xiaomi_multistate_action, fz.aqara_opple, fz.xiaomi_power],
+        toZigbee: [tz.on_off, tz.xiaomi_switch_operation_mode_opple, tz.xiaomi_flip_indicator_light],
+        endpoint: (device) => {
+            return {'left': 1, 'right': 2};
+        },
+        meta: {multiEndpoint: true},
+        exposes: [
+            e.switch().withEndpoint('left'), e.switch().withEndpoint('right'),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for left button')
+                .withEndpoint('left'),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for right button')
+                .withEndpoint('right'),
+            e.action(['single_left', 'double_left', 'single_right', 'double_right',
+                'single_left_right', 'double_left_right', 'single_all', 'double_all']),
+            e.device_temperature(), e.flip_indicator_light(),
+        ],
+        onEvent: preventReset,
+        configure: async (device, coordinatorEndpoint, logger) => {
+            await device.getEndpoint(1).write('aqaraOpple', {'mode': 1}, {manufacturerCode: 0x115f, disableResponse: true});
+        },
         ota: ota.zigbeeOTA,
     },
     {

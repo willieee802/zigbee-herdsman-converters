@@ -107,10 +107,10 @@ function getCoverStateEnums(manufacturerName: string) {
 
 function convertDecimalValueTo4ByteHexArray(value: number) {
     const hexValue = Number(value).toString(16).padStart(8, '0');
-    const chunk1 = hexValue.substr(0, 2);
-    const chunk2 = hexValue.substr(2, 2);
-    const chunk3 = hexValue.substr(4, 2);
-    const chunk4 = hexValue.substr(6);
+    const chunk1 = hexValue.substring(0, 2);
+    const chunk2 = hexValue.substring(2, 4);
+    const chunk3 = hexValue.substring(4, 6);
+    const chunk4 = hexValue.substring(6);
     return [chunk1, chunk2, chunk3, chunk4].map((hexVal) => parseInt(hexVal, 16));
 }
 
@@ -211,13 +211,13 @@ function convertRawToCycleTimer(value: any) {
         timernr = value[1];
         timeractive = value[2];
         if (value[3] > 0) {
-            weekdays = (value[3] & 0x40 ? 'Sa' : '') +
-            (value[3] & 0x20 ? 'Fr' : '') +
-            (value[3] & 0x10 ? 'Th' : '') +
-            (value[3] & 0x08 ? 'We' : '') +
-            (value[3] & 0x04 ? 'Tu' : '') +
+            weekdays = (value[3] & 0x01 ? 'Su' : '') +
             (value[3] & 0x02 ? 'Mo' : '') +
-            (value[3] & 0x01 ? 'Su' : '');
+            (value[3] & 0x04 ? 'Tu' : '') +
+            (value[3] & 0x08 ? 'We' : '') +
+            (value[3] & 0x10 ? 'Th' : '') +
+            (value[3] & 0x20 ? 'Fr' : '') +
+            (value[3] & 0x40 ? 'Sa' : '');
         } else {
             weekdays = 'once';
         }
@@ -461,13 +461,13 @@ function convertRawToTimer(value: any) {
         starttime = String(parseInt(minsincemidnight / 60)).padStart(2, '0') + ':' + String(minsincemidnight % 60).padStart(2, '0');
         duration = value[4] * 256 + value[5];
         if (value[6] > 0) {
-            weekdays = (value[6] & 0x40 ? 'Sa' : '') +
-            (value[6] & 0x20 ? 'Fr' : '') +
-            (value[6] & 0x10 ? 'Th' : '') +
-            (value[6] & 0x08 ? 'We' : '') +
-            (value[6] & 0x04 ? 'Tu' : '') +
+            weekdays = (value[6] & 0x01 ? 'Su' : '') +
             (value[6] & 0x02 ? 'Mo' : '') +
-            (value[6] & 0x01 ? 'Su' : '');
+            (value[6] & 0x04 ? 'Tu' : '') +
+            (value[6] & 0x08 ? 'We' : '') +
+            (value[6] & 0x10 ? 'Th' : '') +
+            (value[6] & 0x20 ? 'Fr' : '') +
+            (value[6] & 0x40 ? 'Sa' : '');
         } else {
             weekdays = 'once';
         }
@@ -3881,7 +3881,7 @@ const fromZigbee1 = {
             case dataPoints.bacFanMode:
                 return {fan_mode: fanModes[value]};
             default: // DataPoint 17 is unknown
-                meta.logger.warn(`zigbee-herdsman-converters:Moes BHT-002: Unrecognized DP #${
+                meta.logger.debug(`zigbee-herdsman-converters:Moes BHT-002: Unrecognized DP #${
                     dp} with data ${JSON.stringify(dpValue)}`);
             }
         },
@@ -8686,9 +8686,39 @@ export {
     giexWaterValve,
     msLookups,
     ZMLookups,
+    firstDpValue,
     dpValueFromEnum,
     dataPoints,
     dpValueFromBool,
     dpValueFromIntValue,
+    dpValueFromRaw,
+    dpValueFromBitmap,
+    dpValueFromStringBuffer,
     moesSwitch,
+    getDataValue,
+    getTypeName,
+    logUnexpectedDataPoint,
+    logUnexpectedDataType,
+    getDataPointNames,
+    getCoverStateEnums,
+    convertDecimalValueTo4ByteHexArray,
+    sendDataPoints,
+    convertStringToHexArray,
+    sendDataPoint,
+    sendDataPointValue,
+    sendDataPointBool,
+    sendDataPointEnum,
+    sendDataPointRaw,
+    sendDataPointBitmap,
+    sendDataPointStringBuffer,
+    convertRawToCycleTimer,
+    logDataPoint,
+    convertWeekdaysTo1ByteHexArray,
+    convertRawToTimer,
+    logUnexpectedDataValue,
+    isCoverInverted,
+    convertDecimalValueTo2ByteHexArray,
+    convertTimeTo2ByteHexArray,
+    getMetaValue,
+    tuyaGetDataValue,
 };
