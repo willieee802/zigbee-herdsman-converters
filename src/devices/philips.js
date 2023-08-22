@@ -11,6 +11,13 @@ const extend = {switch: require('../lib/extend').switch};
 
 module.exports = [
     {
+        zigbeeModel: ['LWV006'],
+        model: '9290030518',
+        vendor: 'Philips',
+        description: 'Philips filament E26 bulb',
+        extend: philips.extend.light_onoff_brightness({disableHueEffects: false}),
+    },
+    {
         zigbeeModel: ['LWO005'],
         model: '9290030519',
         vendor: 'Philips',
@@ -25,11 +32,25 @@ module.exports = [
         extend: philips.extend.light_onoff_brightness(),
     },
     {
+        zigbeeModel: ['LEDtube T8 5FT V2.0'],
+        model: 'LP_CF_7904008_EU',
+        vendor: 'Philips',
+        description: 'MasterConnect LEDtube EM/mains T8',
+        extend: philips.extend.light_onoff_brightness(),
+    },
+    {
         zigbeeModel: ['929003055801'],
         model: '929003055801',
         vendor: 'Philips',
         description: 'Hue white ambiance bathroom ceiling light Adore with Bluetooth',
         extend: philips.extend.light_onoff_brightness_colortemp({colorTempRange: [153, 454]}),
+    },
+    {
+        zigbeeModel: ['LCZ001'],
+        model: '8719514419278',
+        vendor: 'Philips',
+        description: 'Hue Ellipse E27 smart bulb',
+        extend: philips.extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 500]}),
     },
     {
         zigbeeModel: ['929003056701'],
@@ -655,6 +676,13 @@ module.exports = [
         extend: philips.extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 500]}),
     },
     {
+        zigbeeModel: ['LWU002'],
+        model: '9290024406A',
+        vendor: 'Philips',
+        description: 'Hue P45 light bulb',
+        extend: philips.extend.light_onoff_brightness(),
+    },
+    {
         zigbeeModel: ['915005987801'],
         model: '915005987801',
         vendor: 'Philips',
@@ -678,6 +706,13 @@ module.exports = [
     {
         zigbeeModel: ['915005988401'],
         model: '915005988401',
+        vendor: 'Philips',
+        description: 'Hue Gradient light tube compact black',
+        extend: philips.extend.light_onoff_brightness_colortemp_color_gradient({colorTempRange: [153, 500]}),
+    },
+    {
+        zigbeeModel: ['915005988001'],
+        model: '915005988001',
         vendor: 'Philips',
         description: 'Hue Gradient light tube compact black',
         extend: philips.extend.light_onoff_brightness_colortemp_color_gradient({colorTempRange: [153, 500]}),
@@ -947,6 +982,9 @@ module.exports = [
         vendor: 'Philips',
         description: 'Hue white and color ambiance E26/E27',
         extend: philips.extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 500]}),
+        endpoint: (device) => {
+            return {'default': 11};
+        },
     },
     {
         zigbeeModel: ['LCA004'],
@@ -1947,8 +1985,9 @@ module.exports = [
         description: 'Hue dimmer switch',
         fromZigbee: [fz.ignore_command_on, fz.ignore_command_off, fz.ignore_command_step, fz.ignore_command_stop,
             fz.legacy.hue_dimmer_switch, fz.battery],
-        exposes: [e.battery(), e.action(['on_press', 'on_hold', 'on_hold_release', 'up_press', 'up_hold', 'up_hold_release',
-            'down_press', 'down_hold', 'down_hold_release', 'off_press', 'off_hold', 'off_hold_release']),
+        exposes: [e.battery(), e.action(['on_press', 'on_press_release', 'on_hold', 'on_hold_release', 'up_press',
+            'up_press_release', 'up_hold', 'up_hold_release', 'down_press', 'down_press_release', 'down_hold',
+            'down_hold_release', 'off_press', 'off_press_release', 'off_hold', 'off_hold_release']),
         exposes.numeric('action_duration', ea.STATE).withUnit('second')],
         toZigbee: [],
         configure: async (device, coordinatorEndpoint, logger) => {
@@ -3260,6 +3299,13 @@ module.exports = [
         model: '915005987901',
         vendor: 'Philips',
         description: 'Hue Gradient light tube compact',
+        extend: philips.extend.light_onoff_brightness_colortemp_color_gradient({colorTempRange: [153, 500]}),
+    },
+    {
+        zigbeeModel: ['915005988201'],
+        model: '915005988201',
+        vendor: 'Philips',
+        description: 'Hue Gradient light tube large black EU',
         extend: philips.extend.light_onoff_brightness_colortemp_color_gradient({colorTempRange: [153, 500]}),
     },
     {

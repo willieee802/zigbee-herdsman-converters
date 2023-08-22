@@ -1921,6 +1921,9 @@ const definitions: Definition[] = [
                 ),
         ],
         configure: async (device, coordinatorEndpoint, logger) => {
+            device.softwareBuildID = `${device.applicationVersion}`;
+            device.save();
+
             const endpoint = device.getEndpoint(1);
             await endpoint.read('aqaraOpple', [0x010c], {manufacturerCode: 0x115f});
             await endpoint.read('aqaraOpple', [0x0142], {manufacturerCode: 0x115f});
@@ -2166,6 +2169,11 @@ const definitions: Definition[] = [
             e.gas(), e.battery_low(), e.tamper(), e.enum('sensitivity', ea.STATE_SET, ['low', 'medium', 'high']),
             e.numeric('gas_density', ea.STATE), e.enum('selftest', ea.SET, ['']),
         ],
+        configure: async (device, coordinatorEndpoint, logger) => {
+            device.powerSource = 'Battery';
+            device.type = 'EndDevice';
+            device.save();
+        },
     },
     {
         zigbeeModel: ['lumi.sensor_gas.acn02'],
@@ -2440,6 +2448,7 @@ const definitions: Definition[] = [
             await endpoint.read('aqaraOpple', [0x0428], {manufacturerCode: 0x115f});
             await endpoint.read('genBasic', ['powerSource']);
             await endpoint.read('closuresWindowCovering', ['currentPositionLiftPercentage']);
+            utils.attachOutputCluster(device, 'genOta');
         },
         ota: ota.zigbeeOTA,
     },
@@ -2616,7 +2625,7 @@ const definitions: Definition[] = [
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
         },
         exposes: [e.battery(), e.battery_voltage(), e.illuminance().withAccess(ea.STATE_GET),
-            e.illuminance_lux().withAccess(ea.STATE_GET), e.power_outage_count(false)],
+            e.illuminance_lux().withAccess(ea.STATE_GET)],
     },
     {
         zigbeeModel: ['lumi.light.rgbac1'],
@@ -2982,6 +2991,9 @@ const definitions: Definition[] = [
             const endpoint = device.getEndpoint(1);
             await device.getEndpoint(1).write('aqaraOpple', {'mode': 1}, {manufacturerCode: 0x115f, disableResponse: true});
             await endpoint.read('aqaraOpple', [0x0000], {manufacturerCode: 0x115f});
+
+            // This cluster is not discovered automatically and needs to be explicitly attached to enable OTA
+            utils.attachOutputCluster(device, 'genOta');
         },
         ota: ota.zigbeeOTA,
     },

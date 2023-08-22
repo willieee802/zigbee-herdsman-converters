@@ -501,13 +501,36 @@ module.exports = [
         },
     },
     {
+        zigbeeModel: ['CCTFR6100'],
+        model: 'CCTFR6100Z3',
+        vendor: 'Schneider Electric',
+        description: 'Wiser radiator thermostat',
+        fromZigbee: [fz.ignore_basic_report, fz.ignore_haDiagnostic, fz.ignore_genOta, fz.ignore_zclversion_read,
+            fz.legacy.wiser_thermostat, fz.legacy.wiser_itrv_battery, fz.hvac_user_interface, fz.wiser_device_info],
+        toZigbee: [tz.thermostat_occupied_heating_setpoint, tz.thermostat_keypad_lockout],
+        exposes: [exposes.climate().withSetpoint('occupied_heating_setpoint', 7, 30, 1).withLocalTemperature(ea.STATE)
+            .withRunningState(['idle', 'heat'], ea.STATE).withPiHeatingDemand()],
+        configure: async (device, coordinatorEndpoint, logger) => {
+            const endpoint = device.getEndpoint(1);
+            const binds = ['genBasic', 'genPowerCfg', 'hvacThermostat', 'haDiagnostic'];
+            await reporting.bind(endpoint, coordinatorEndpoint, binds);
+            await reporting.batteryVoltage(endpoint);
+            await reporting.thermostatTemperature(endpoint);
+            await reporting.thermostatOccupiedHeatingSetpoint(endpoint);
+            await reporting.thermostatPIHeatingDemand(endpoint);
+            // bind of hvacUserInterfaceCfg fails with 'Table Full', does this have any effect?
+            await endpoint.configureReporting('hvacUserInterfaceCfg', [{attribute: 'keypadLockout', reportableChange: 1,
+                minimumReportInterval: constants.repInterval.MINUTE, maximumReportInterval: constants.repInterval.HOUR}]);
+        },
+    },
+    {
         zigbeeModel: ['NHPB/SWITCH/1'],
         model: 'S520530W',
         vendor: 'Schneider Electric',
         description: 'Odace connectable relay switch 10A',
-        extend: extend.switch(),
+        extend: extend.switch({disablePowerOnBehavior: true}),
         configure: async (device, coordinatorEndpoint, logger) => {
-            const endpoint = device.getEndpoint(21);
+            const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await reporting.onOff(endpoint);
         },
@@ -745,7 +768,7 @@ module.exports = [
         },
     },
     {
-        zigbeeModel: ['2GANG/SWITCH/2'],
+        zigbeeModel: ['2GANG/SWITCH/2', '2GANG/SWITCH/1'],
         model: 'MEG5126-0300',
         vendor: 'Schneider Electric',
         description: 'Merten MEG5165 PlusLink relais insert with Merten Wiser System M push button (2fold)',
