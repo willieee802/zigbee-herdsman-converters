@@ -75,7 +75,7 @@ const definitions: Definition[] = [
         toZigbee: extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 556], supportsHueAndSaturation: true}).toZigbee
             .concat([tz.tint_scene]),
         // GU10 bulb does not support supportsEnhancedHue,
-        // we can identify these based on the presense of haDiagnostic input cluster
+        // we can identify these based on the presence of haDiagnostic input cluster
         meta: {supportsEnhancedHue: (entity: Zh.Endpoint) => !entity.getDevice().getEndpoint(1).inputClusters.includes(2821)},
     },
     {
@@ -137,9 +137,9 @@ const definitions: Definition[] = [
         model: '404002',
         description: 'Tint dim remote control',
         vendor: 'Müller Licht',
-        fromZigbee: [fz.command_on, fz.command_off, fz.command_step, fz.command_move, fz.command_stop, fz.command_recall],
+        fromZigbee: [fz.command_on, fz.command_off, fz.command_step, fz.command_move, fz.command_stop, fz.command_recall, fz.command_store],
         exposes: [e.action(['on', 'off', 'brightness_step_up', 'brightness_step_down', 'brightness_move_up', 'brightness_move_down',
-            'brightness_stop', 'recall_1'])],
+            'brightness_stop', 'recall_1', 'store_1'])],
         toZigbee: [],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(1);

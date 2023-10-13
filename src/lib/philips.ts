@@ -47,9 +47,11 @@ const knownEffects = {
     '0380': 'colorloop',
     '0980': 'sunrise',
     '0a80': 'sparkle',
+    '0b80': 'opal',
+    '0c80': 'glisten',
 };
 
-const extend = {
+export const extend = {
     light_onoff_brightness: (options: Extend.options_light_onoff_brightness & {disableHueEffects?: boolean}={}) => {
         options = {disableHueEffects: false, ...options};
         if (!options.disableHueEffects) options.disableEffect = true;
@@ -402,10 +404,12 @@ const hueEffects = {
     'colorloop': '21000103',
     'sunrise': '21000109',
     'sparkle': '2100010a',
+    'opal': '2100010b',
+    'glisten': '2100010c',
     'stop_hue_effect': '200000',
 };
 
-const philipsFz = {
+export const philipsFz = {
     hue_tap_dial: {
         cluster: 'manuSpecificPhilips',
         type: 'commandHueNotification',

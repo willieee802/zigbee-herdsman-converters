@@ -84,14 +84,14 @@ const definitions: Definition[] = [
     {
         zigbeeModel: ['TWBulb51AU'],
         model: 'AU-A1GSZ9CX',
-        vendor: 'Aurora',
+        vendor: 'Aurora Lighting',
         description: 'AOne GLS lamp 9w tunable dimmable 2200-5000K',
         extend: extend.light_onoff_brightness_colortemp({colorTempRange: [200, 454]}),
     },
     {
         zigbeeModel: ['RGBCXStrip50AU'],
         model: 'AU-A1ZBSCRGBCX',
-        vendor: 'Aurora',
+        vendor: 'Aurora Lighting',
         description: 'RGBW LED strip controller',
         extend: extend.light_onoff_brightness_colortemp_color({colorTempRange: [166, 400]}),
     },
@@ -107,7 +107,7 @@ const definitions: Definition[] = [
         model: 'AU-A1ZBMPRO1ZX',
         vendor: 'Aurora Lighting',
         description: 'AOne MPROZX fixed IP65 fire rated smart tuneable LED downlight',
-        extend: extend.light_onoff_brightness_colortemp({colorTempRange: [200, 455]}),
+        extend: extend.light_onoff_brightness_colortemp({colorTempRange: [200, 455], disablePowerOnBehavior: true}),
     },
     {
         zigbeeModel: ['FWG125Bulb50AU'],

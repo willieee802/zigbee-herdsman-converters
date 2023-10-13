@@ -5,7 +5,7 @@ const reporting = require('../lib/reporting');
 const utils = require('../lib/utils');
 const e = exposes.presets;
 const ea = exposes.access;
-const herdsman = require('@willieee802/zigbee-herdsman');
+const herdsman = require('zigbee-herdsman');
 
 const manufacturerOptions = {manufacturerCode: herdsman.Zcl.ManufacturerCode.PLUGWISE_BV};
 

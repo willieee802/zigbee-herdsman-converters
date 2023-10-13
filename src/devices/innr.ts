@@ -48,6 +48,15 @@ const definitions: Definition[] = [
         ota: ota.zigbeeOTA,
     },
     {
+        zigbeeModel: ['FL 142 C'],
+        model: 'FL 142 C',
+        vendor: 'Innr',
+        description: 'Color Flex LED strip 4m 2000lm',
+        extend: extend.light_onoff_brightness_colortemp_color({
+            colorTempRange: [150, 500], supportsHueAndSaturation: true, disableColorTempStartup: true, disablePowerOnBehavior: true,
+        }),
+    },
+    {
         zigbeeModel: ['FL 140 C'],
         model: 'FL 140 C',
         vendor: 'Innr',
@@ -150,6 +159,9 @@ const definitions: Definition[] = [
         extend: extend.light_onoff_brightness(),
         meta: {turnsOffAtBrightness1: true},
         ota: ota.zigbeeOTA,
+        endpoint: (device) => {
+            return {default: 1};
+        },
     },
     {
         zigbeeModel: ['RB 266'],
@@ -318,6 +330,9 @@ const definitions: Definition[] = [
         extend: extend.light_onoff_brightness_colortemp({colorTempRange: [200, 454]}),
         meta: {turnsOffAtBrightness1: true},
         ota: ota.zigbeeOTA,
+        endpoint: (device) => {
+            return {default: 1};
+        },
     },
     {
         zigbeeModel: ['RS 128 T'],

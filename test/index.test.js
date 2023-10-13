@@ -313,7 +313,7 @@ describe('index.js', () => {
 
 
             if (device.meta) {
-                containsOnly(['disableActionGroup', 'multiEndpoint', 'multiEndpointSkip', 'multiEndpointEnforce', 'applyRedFix', 'disableDefaultResponse', 'supportsEnhancedHue', 'timeout', 'supportsHueAndSaturation', 'battery', 'coverInverted', 'turnsOffAtBrightness1', 'coverStateFromTilt', 'pinCodeCount', 'tuyaThermostatSystemMode', 'tuyaThermostatPreset', 'tuyaDatapoints', 'tuyaThermostatPresetToSystemMode', 'thermostat', 'fanStateOn', 'separateWhite', 'publishDuplicateTransaction', 'tuyaSendCommand'], Object.keys(device.meta));
+                containsOnly(['disableActionGroup', 'multiEndpoint', 'multiEndpointSkip', 'multiEndpointEnforce', 'applyRedFix', 'disableDefaultResponse', 'supportsEnhancedHue', 'timeout', 'supportsHueAndSaturation', 'battery', 'coverInverted', 'turnsOffAtBrightness1', 'coverStateFromTilt', 'pinCodeCount', 'tuyaThermostatSystemMode', 'tuyaThermostatPreset', 'tuyaDatapoints', 'tuyaThermostatPresetToSystemMode', 'thermostat', 'separateWhite', 'publishDuplicateTransaction', 'tuyaSendCommand'], Object.keys(device.meta));
             }
 
             if (device.zigbeeModel) {
@@ -394,7 +394,7 @@ describe('index.js', () => {
                 "type":"composite",
                 "property":"color_rgb",
                 "name":"color_xy",
-                "label": "Color xy",
+                "label": "Color (X/Y)",
                 "description": "Color of this light in the CIE 1931 color space (x/y)",
                 "access":7,
                 "features":[

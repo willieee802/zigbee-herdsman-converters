@@ -78,7 +78,7 @@ const definitions: Definition[] = [
         exposes: [e.contact(), e.battery_low(), e.temperature(), e.battery()],
     },
     {
-        zigbeeModel: ['3450-L', '3450-L2'],
+        zigbeeModel: ['3450-L', '3450-L2', '3450-Geu'],
         model: '3450-L',
         vendor: 'Iris',
         description: 'Smart fob',
@@ -91,7 +91,7 @@ const definitions: Definition[] = [
             const endpoint1 = device.getEndpoint(1);
             await reporting.bind(endpoint1, coordinatorEndpoint, ['genOnOff', 'genPowerCfg', 'genPollCtrl']);
             await reporting.batteryVoltage(endpoint1);
-            const interval = 100 - 10; // 100 seconds is default timeout so set inverval to 10 seconds before
+            const interval = 100 - 10; // 100 seconds is default timeout so set interval to 10 seconds before
             await endpoint1.write('genPollCtrl', {'checkinInterval': (interval * 4)});
             const endpoint2 = device.getEndpoint(2);
             await reporting.bind(endpoint2, coordinatorEndpoint, ['genOnOff']);
@@ -113,7 +113,6 @@ const definitions: Definition[] = [
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'msTemperatureMeasurement']);
-            await reporting.onOff(endpoint);
             await reporting.batteryVoltage(endpoint);
             await reporting.temperature(endpoint);
         },

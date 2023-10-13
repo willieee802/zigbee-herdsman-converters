@@ -276,7 +276,7 @@ const definitions: Definition[] = [
     {
         zigbeeModel: ['ROB_200-016-0'],
         model: 'ROB_200-016-0',
-        vendor: 'ROBB smart',
+        vendor: 'ROBB',
         description: 'RGB CCT DIM 3 in 1 Zigbee Remote',
         fromZigbee: [fz.battery, fz.command_move_to_color, fz.command_move_to_color_temp, fz.command_move_hue,
             fz.command_step, fz.command_recall, fz.command_on, fz.command_off, fz.command_toggle, fz.command_stop,
@@ -332,6 +332,13 @@ const definitions: Definition[] = [
             await reporting.rmsVoltage(endpoint);
             await reporting.currentSummDelivered(endpoint);
         },
+    },
+    {
+        zigbeeModel: ['ROB_200-063-0'],
+        model: 'ROB_200-063-0',
+        vendor: 'ROBB',
+        description: 'Zigbee 0-10V PWM dimmer',
+        extend: extend.light_onoff_brightness(),
     },
 ];
 

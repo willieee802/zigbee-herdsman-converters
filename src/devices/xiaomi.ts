@@ -838,6 +838,11 @@ const definitions: Definition[] = [
             e.power_outage_count(),
         ]),
         ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint, logger) => {
+            device.type = 'Router';
+            device.powerSource = 'Mains (single phase)';
+            device.save();
+        },
     },
     {
         zigbeeModel: ['lumi.light.cwopcn01'],
@@ -962,6 +967,16 @@ const definitions: Definition[] = [
                 // fails for some but device works as expected: https://github.com/Koenkk/zigbee2mqtt/issues/9136
             }
         },
+    },
+    {
+        zigbeeModel: ['lumi.light.acn132'],
+        model: 'LGYCDD01LM',
+        vendor: 'Xiaomi',
+        whiteLabel: [{vendor: 'Xiaomi', model: 'RLS-K01D'}],
+        description: 'Aqara Zigbee 3.0 LED strip T1',
+        extend: extend.light_onoff_brightness_colortemp_color(
+            {disableEffect: true, disablePowerOnBehavior: true, disableColorTempStartup: true, colorTempRange: [153, 370]}),
+        ota: ota.zigbeeOTA,
     },
     {
         zigbeeModel: ['lumi.sensor_86sw2', 'lumi.sensor_86sw2.es1'],
@@ -1154,6 +1169,34 @@ const definitions: Definition[] = [
                 .withDescription('Decoupled mode for left button').withEndpoint('left'),
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode for right button').withEndpoint('right')],
+        onEvent: preventReset,
+        ota: ota.zigbeeOTA,
+    },
+    {
+        zigbeeModel: ['lumi.switch.n3acn1'],
+        model: 'QBKG32LM',
+        vendor: 'Xiaomi',
+        description: 'Aqara smart wall switch H1 Pro (with neutral, triple rocker)',
+        meta: {multiEndpoint: true},
+        endpoint: (device) => {
+            return {'left': 1, 'center': 2, 'right': 3};
+        },
+        fromZigbee: [fz.on_off, fz.xiaomi_power, fz.aqara_opple, fz.xiaomi_multistate_action],
+        toZigbee: [tz.on_off, tz.xiaomi_switch_operation_mode_opple, tz.xiaomi_switch_power_outage_memory,
+            tz.xiaomi_led_disabled_night, tz.xiaomi_flip_indicator_light],
+        exposes: [e.switch().withEndpoint('left'), e.switch().withEndpoint('right'), e.switch().withEndpoint('center'),
+            e.power(), e.energy(), e.voltage(), e.device_temperature(), e.power_outage_memory(), e.led_disabled_night(), e.flip_indicator_light(),
+            e.action([
+                'single_left', 'double_left', 'single_center', 'double_center',
+                'single_right', 'double_right', 'single_left_center', 'double_left_center',
+                'single_left_right', 'double_left_right', 'single_center_right', 'double_center_right',
+                'single_all', 'double_all']),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for left button').withEndpoint('left'),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for right button').withEndpoint('right'),
+            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
+                .withDescription('Decoupled mode for right button').withEndpoint('center')],
         onEvent: preventReset,
         ota: ota.zigbeeOTA,
     },
@@ -2336,7 +2379,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.xiaomi_basic, fz.xiaomi_curtain_position, fz.xiaomi_curtain_position_tilt, fz.xiaomi_curtain_hagl04_status],
         toZigbee: [tz.xiaomi_curtain_position_state, tz.xiaomi_curtain_options],
         onEvent: async (type, data, device) => {
-            // The position (genAnalogOutput.presentValue) reported via an attribute contains an invaid value
+            // The position (genAnalogOutput.presentValue) reported via an attribute contains an invalid value
             // however when reading it will provide the correct value.
             if (data.type === 'attributeReport' && data.cluster === 'genAnalogOutput') {
                 await device.endpoints[0].read('genAnalogOutput', ['presentValue']);
@@ -2357,7 +2400,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.xiaomi_basic, fz.xiaomi_curtain_position, fz.xiaomi_curtain_position_tilt, fz.xiaomi_curtain_hagl07_status],
         toZigbee: [tz.xiaomi_curtain_position_state, tz.xiaomi_curtain_options],
         onEvent: async (type, data, device) => {
-            // The position (genAnalogOutput.presentValue) reported via an attribute contains an invaid value
+            // The position (genAnalogOutput.presentValue) reported via an attribute contains an invalid value
             // however when reading it will provide the correct value.
             if (data.type === 'attributeReport' && data.cluster === 'genAnalogOutput') {
                 await device.endpoints[0].read('genAnalogOutput', ['presentValue']);
@@ -2474,6 +2517,22 @@ const definitions: Definition[] = [
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn047'],
+        model: 'LLKZMK12LM',
+        vendor: 'Xiaomi',
+        description: 'Aqara dual relay module T2',
+        fromZigbee: [fz.on_off, fz.aqara_opple, fz.xiaomi_power],
+        toZigbee: [tz.on_off],
+        meta: {multiEndpoint: true},
+        endpoint: (device) => {
+            return {'l1': 1, 'l2': 2};
+        },
+        exposes: [e.switch().withEndpoint('l1'), e.switch().withEndpoint('l2'),
+            e.power(), e.current(), e.energy(), e.voltage(), e.device_temperature(),
+        ],
+        ota: ota.zigbeeOTA,
     },
     {
         zigbeeModel: ['lumi.lock.acn02'],
@@ -3187,7 +3246,7 @@ const definitions: Definition[] = [
             e.numeric('portions_per_day', ea.STATE).withDescription('Portions per day'),
             e.numeric('weight_per_day', ea.STATE).withDescription('Weight per day').withUnit('g'),
             e.binary('error', ea.STATE, true, false)
-                .withDescription('Indicates wether there is an error with the feeder'),
+                .withDescription('Indicates whether there is an error with the feeder'),
             e.list('schedule', ea.STATE_SET, e.composite('dayTime', 'dayTime', exposes.access.STATE_SET)
                 .withFeature(e.enum('days', exposes.access.STATE_SET, [
                     'everyday', 'workdays', 'weekend', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',

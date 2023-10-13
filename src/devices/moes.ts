@@ -113,7 +113,7 @@ const definitions: Definition[] = [
             legacy.tz.moes_thermostat_deadzone_temperature, legacy.tz.moes_thermostat_max_temperature_limit,
             legacy.tz.moes_thermostat_min_temperature_limit, legacy.tz.moes_thermostat_program_schedule],
         whiteLabel: [
-            tuya.whitelabel('Moes', 'BHT-006GBZB', 'Smart heating thermostat', ['_TZE204_aoclfnxz']),
+            tuya.whitelabel('Moes', 'BHT-002/BHT-006', 'Smart heating thermostat', ['_TZE204_aoclfnxz']),
         ],
         exposes: [e.child_lock(), e.deadzone_temperature(), e.max_temperature_limit(), e.min_temperature_limit(),
             e.climate().withSetpoint('current_heating_setpoint', 5, 35, 1, ea.STATE_SET)
@@ -282,7 +282,8 @@ const definitions: Definition[] = [
         model: 'BRT-100-TRV',
         vendor: 'Moes',
         description: 'Thermostatic radiator valve',
-        ota: ota.zigbeeOTA,
+        // ota: ota.zigbeeOTA,
+        // OTA available but bricks device https://github.com/Koenkk/zigbee2mqtt/issues/18840
         onEvent: tuya.onEventSetLocalTime,
         fromZigbee: [fz.ignore_basic_report, fz.ignore_tuya_set_time, legacy.fz.moesS_thermostat],
         toZigbee: [legacy.tz.moesS_thermostat_current_heating_setpoint, legacy.tz.moesS_thermostat_child_lock,
@@ -320,14 +321,6 @@ const definitions: Definition[] = [
             e.numeric('boost_heating_countdown_time_set', ea.STATE_SET).withUnit('s')
                 .withDescription('Boost Time Setting 100 sec - 900 sec, (default = 300 sec)').withValueMin(100)
                 .withValueMax(900).withValueStep(100)],
-    },
-    {
-        fingerprint: [{modelID: 'TS0505B', manufacturerName: '_TZ3000_7hcgjxpc'},
-            {modelID: 'TS0505B', manufacturerName: '_TZ3210_rcggc0ys'}],
-        model: 'ZLD-RCW',
-        vendor: 'Moes',
-        description: 'RGB+CCT Zigbee LED Controller',
-        extend: tuya.extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 500]}),
     },
     {
         fingerprint: [{modelID: 'TS130F', manufacturerName: '_TZ3000_1dd0d5yi'}],
