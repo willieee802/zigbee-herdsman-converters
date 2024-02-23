@@ -37,7 +37,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     thermostat_ui: {
         cluster: 'hvacUserInterfaceCfg',
         type: ['attributeReport', 'readResponse'],
@@ -55,7 +55,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
 };
 
 const tzLocal = {
@@ -101,7 +101,7 @@ const tzLocal = {
             }
             return {state: {[key]: value}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     thermostat_ui: {
         key: ['brightness', 'brightness_standby'],
         convertGet: async (entity, key, meta) => {
@@ -137,7 +137,7 @@ const tzLocal = {
             }
             return {state: {[key]: value}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
 };
 
 const definitions: Definition[] = [
@@ -291,7 +291,6 @@ const definitions: Definition[] = [
             await endpoint3.configureReporting('hvacThermostat', [
                 {attribute: 'runningMode', minimumReportInterval: 1, maximumReportInterval: 120, reportableChange: 1}]);
             await endpoint3.read('hvacThermostat', ['localTemp', 'occupiedHeatingSetpoint', 'systemMode', 'runningMode']);
-            await endpoint3.read('hvacThermostat', [30464, 30465], manufacturerOptions);
         },
     },
     {
@@ -507,9 +506,9 @@ const definitions: Definition[] = [
             await endpoint4.configureReporting('hvacThermostat', [
                 {attribute: 'runningMode', minimumReportInterval: 1, maximumReportInterval: 120, reportableChange: 1}]);
             await endpoint4.read('hvacThermostat', ['localTemp', 'occupiedHeatingSetpoint', 'systemMode', 'runningMode']);
-            await endpoint4.read('hvacThermostat', [30464, 30465], manufacturerOptions);
         },
     },
 ];
 
+export default definitions;
 module.exports = definitions;

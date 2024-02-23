@@ -1,6 +1,7 @@
 import * as globalStore from './store';
 import {Zcl} from '@willieee802/zigbee-herdsman';
-import {Definition, Fz, KeyValue, KeyValueAny, Logger, Publish, Tz, Zh} from './types';
+import {Definition, Expose, Fz, KeyValue, KeyValueAny, Logger, Publish, Tz, Zh} from './types';
+import {Feature, Light, Numeric} from './exposes';
 
 export function isLegacyEnabled(options: KeyValue) {
     return !options.hasOwnProperty('legacy') || options.legacy;
@@ -52,32 +53,34 @@ export function numberWithinRange(number: number, min: number, max: number) {
 /**
  * Maps number from one range to another. In other words it performs a linear interpolation.
  * Note that this function can interpolate values outside source range (linear extrapolation).
- * @param {number} value value to map
- * @param {number} fromLow source range lower value
- * @param {number} fromHigh source range upper value
- * @param {number} toLow target range lower value
- * @param {number} toHigh target range upper value
- * @param {number} [precision=0] number of decimal places to which result should be rounded
- * @return {number} value mapped to new range
+ * @param value - value to map
+ * @param fromLow - source range lower value
+ * @param fromHigh - source range upper value
+ * @param toLow - target range lower value
+ * @param toHigh - target range upper value
+ * @param number - of decimal places to which result should be rounded
+ * @returns value mapped to new range
  */
-export function mapNumberRange(value: number, fromLow: number, fromHigh: number, toLow: number, toHigh: number, precision=0) {
+export function mapNumberRange(value: number, fromLow: number, fromHigh: number, toLow: number, toHigh: number, precision=0): number {
     const mappedValue = toLow + (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow);
     return precisionRound(mappedValue, precision);
 }
 
-const transactionStore: {[s: string]: number} = {};
+const transactionStore: {[s: string]: number[]} = {};
 export function hasAlreadyProcessedMessage(msg: Fz.Message, model: Definition, ID: number=null, key: string=null) {
     if (model.meta && model.meta.publishDuplicateTransaction) return false;
     const currentID = ID !== null ? ID : msg.meta.zclTransactionSequenceNumber;
     key = key || msg.device.ieeeAddr;
-    if (transactionStore[key] === currentID) return true;
-    transactionStore[key] = currentID;
+    if (transactionStore[key]?.includes(currentID)) return true;
+    // Keep last 5, as they might come in different order: https://github.com/Koenkk/zigbee2mqtt/issues/20024
+    transactionStore[key] = [currentID, ...(transactionStore[key] ?? [])].slice(0, 5);
     return false;
 }
 
 export const calibrateAndPrecisionRoundOptionsDefaultPrecision: KeyValue = {
     temperature: 2, humidity: 2, pressure: 1, pm25: 0, power: 2, current: 2, current_phase_b: 2, current_phase_c: 2,
-    voltage: 2, voltage_phase_b: 2, voltage_phase_c: 2, power_phase_b: 2, power_phase_c: 2, energy: 2,
+    voltage: 2, voltage_phase_b: 2, voltage_phase_c: 2, power_phase_b: 2, power_phase_c: 2, energy: 2, device_temperature: 0,
+    soil_moisture: 2, co2: 0, illuminance: 0, illuminance_lux: 0, voc: 0, formaldehyd: 0, co: 0,
 };
 export function calibrateAndPrecisionRoundOptionsIsPercentual(type: string) {
     return type.startsWith('current') || type.startsWith('energy') || type.startsWith('voltage') || type.startsWith('power') ||
@@ -91,7 +94,7 @@ export function calibrateAndPrecisionRoundOptions(number: number, options: KeyVa
     if (calibrateAndPrecisionRoundOptionsIsPercentual(type)) {
         // linear calibration because measured value is zero based
         // +/- percent
-        calibrationOffset = Math.round(number * calibrationOffset / 100);
+        calibrationOffset = number * calibrationOffset / 100;
     }
     number = number + calibrationOffset;
 
@@ -119,6 +122,13 @@ export function addActionGroup(payload: KeyValue, msg: Fz.Message, definition: D
     if (!disableActionGroup && msg.groupID) {
         payload.action_group = msg.groupID;
     }
+}
+
+export function getEndpointName(msg: Fz.Message, definition: Definition, meta: Fz.Meta) {
+    if (!definition.endpoint) {
+        throw new Error(`Definition '${definition.model}' has not endpoint defined`);
+    }
+    return getKey(definition.endpoint(meta.device), msg.endpoint.ID);
 }
 
 export function postfixWithEndpointName(value: string, msg: Fz.Message, definition: Definition, meta: Fz.Meta) {
@@ -151,8 +161,9 @@ export function enforceEndpoint(entity: Zh.Endpoint, key: string, meta: Tz.Meta)
     return entity;
 }
 
-export function getKey<T>(object: {[s: string]: T}, value: T, fallback?: T, convertTo?: (v: unknown) => T) {
+export function getKey<T>(object: {[s: string]: T} | {[s: number]: T}, value: T, fallback?: T, convertTo?: (v: unknown) => T) {
     for (const key in object) {
+        // @ts-expect-error
         if (object[key]===value) {
             return convertTo ? convertTo(key) : key;
         }
@@ -237,7 +248,6 @@ export function getMetaValue<T>(entity: Zh.Group | Zh.Endpoint, definition: Defi
             return values[0];
         }
     } else {
-        // @ts-expect-error
         const definitionMeta = getMetaValues(definition, entity);
         if (definitionMeta && definitionMeta.hasOwnProperty(key)) {
             // @ts-expect-error
@@ -262,7 +272,7 @@ export function isInRange(min: number, max: number, value: number) {
     return value >= min && value <= max;
 }
 
-export function replaceInArray<T>(arr: T[], oldElements: T[], newElements: T[]) {
+export function replaceInArray<T>(arr: T[], oldElements: T[], newElements: T[], errorIfNotInArray=true) {
     const clone = [...arr];
     for (let i = 0; i < oldElements.length; i++) {
         const index = clone.indexOf(oldElements[i]);
@@ -270,7 +280,9 @@ export function replaceInArray<T>(arr: T[], oldElements: T[], newElements: T[]) 
         if (index !== -1) {
             clone[index] = newElements[i];
         } else {
-            throw new Error('Element not in array');
+            if (errorIfNotInArray) {
+                throw new Error('Element not in array');
+            }
         }
     }
 
@@ -392,7 +404,7 @@ export function getTransition(entity: Zh.Endpoint | Zh.Group, key: string, meta:
     if (message.hasOwnProperty('transition')) {
         const time = toNumber(message.transition, 'transition');
         return {time: time * 10, specified: true};
-    } else if (options.hasOwnProperty('transition')) {
+    } else if (options.hasOwnProperty('transition') && options.transition !== '') {
         const transition = toNumber(options.transition, 'transition');
         return {time: transition * 10, specified: true};
     } else {
@@ -400,23 +412,30 @@ export function getTransition(entity: Zh.Endpoint | Zh.Group, key: string, meta:
     }
 }
 
-export function getOptions(definition: Definition, entity: Zh.Endpoint | Zh.Group, options={}) {
+export function getOptions(definition: Definition | Definition[], entity: Zh.Endpoint | Zh.Group, options={}) {
     const allowed = ['disableDefaultResponse', 'timeout'];
     return getMetaValues(definition, entity, allowed, options);
 }
 
-export function getMetaValues(definition: Definition, entity: Zh.Endpoint | Zh.Group, allowed?: string[], options={}) {
+export function getMetaValues(definitions: Definition | Definition[], entity: Zh.Endpoint | Zh.Group, allowed?: string[], options={}) {
     const result: KeyValue = {...options};
-    if (definition && definition.meta) {
-        for (const key of Object.keys(definition.meta)) {
-            if (allowed == null || allowed.includes(key)) {
-                // @ts-expect-error
-                const value = definition.meta[key];
-                result[key] = typeof value === 'function' ? value(entity) : value;
+    for (const definition of Array.isArray(definitions) ? definitions : [definitions]) {
+        if (definition && definition.meta) {
+            for (const key of Object.keys(definition.meta)) {
+                if (allowed == null || allowed.includes(key)) {
+                    // @ts-expect-error
+                    const value = definition.meta[key];
+                    if (typeof value === 'function') {
+                        if (isEndpoint(entity)) {
+                            result[key] = value(entity);
+                        }
+                    } else {
+                        result[key] = value;
+                    }
+                }
             }
         }
     }
-
     return result;
 }
 
@@ -430,10 +449,22 @@ export function validateValue(value: unknown, allowed: unknown[]) {
     }
 }
 
+export async function getClusterAttributeValue<T>(endpoint: Zh.Endpoint, cluster: string, attribute: string, fallback: T = undefined): Promise<T> {
+    try {
+        if (endpoint.getClusterAttributeValue(cluster, attribute) == null) {
+            await endpoint.read(cluster, [attribute]);
+        }
+        return endpoint.getClusterAttributeValue(cluster, attribute) as T;
+    } catch (error) {
+        if (fallback !== undefined) return fallback;
+        throw error;
+    }
+}
+
 export function normalizeCelsiusVersionOfFahrenheit(value: number) {
     const fahrenheit = (value * 1.8) + 32;
     const roundedFahrenheit = Number((Math.round(Number((fahrenheit * 2).toFixed(1))) / 2).toFixed(1));
-    return ((roundedFahrenheit - 32)/1.8).toFixed(2);
+    return Number(((roundedFahrenheit - 32)/1.8).toFixed(2));
 }
 
 export function noOccupancySince(endpoint: Zh.Endpoint, options: KeyValueAny, publish: Publish, action: 'start' | 'stop') {
@@ -465,45 +496,55 @@ export function attachOutputCluster(device: Zh.Device, clusterKey: string) {
     }
 }
 
-/**
- * @param {number} value
- * @param {number} hexLength
- * @return {string}
- */
-export function printNumberAsHex(value: number, hexLength: number) {
+export function printNumberAsHex(value: number, hexLength: number): string {
     const hexValue = value.toString(16).padStart(hexLength, '0');
     return `0x${hexValue}`;
 }
 
-/**
- * @param {number[]} numbers
- * @param {number} hexLength
- * @return {string}
- */
-export function printNumbersAsHexSequence(numbers: number[], hexLength: number) {
+export function printNumbersAsHexSequence(numbers: number[], hexLength: number): string {
     return numbers.map((v) => v.toString(16).padStart(hexLength, '0')).join(':');
 }
 
 // Note: this is valid typescript-flavored JSDoc
 // eslint-disable-next-line valid-jsdoc
-/**
- * @param {logger} logger
- * @param {vendor} vendor
- * @param {key} key
- * @returns {(level: string, message: string) => void}
- */
 export const createLogger = (logger: Logger, vendor: string, key: string) => (level: 'debug' | 'info' | 'warn' | 'error', message: string) => {
     logger[level](`zigbee-herdsman-converters:${vendor}:${key}: ${message}`);
 };
+
+// eslint-disable-next-line
+export function assertObject(value: unknown, property?: string): asserts value is {[s: string]: any} {
+    const isObject = typeof value === 'object' && !Array.isArray(value) && value !== null;
+    if (!isObject) {
+        throw new Error(`${property} is not a object, got ${typeof value} (${JSON.stringify(value)})`);
+    }
+}
+
+export function assertArray(value: unknown, property?: string): asserts value is Array<unknown> {
+    property = property ? `'${property}'` : 'Value';
+    if (!Array.isArray(value)) throw new Error(`${property} is not an array, got ${typeof value} (${value.toString()})`);
+}
 
 export function assertString(value: unknown, property?: string): asserts value is string {
     property = property ? `'${property}'` : 'Value';
     if (typeof value !== 'string') throw new Error(`${property} is not a string, got ${typeof value} (${value.toString()})`);
 }
 
+export function isNumber(value: unknown): value is number {
+    return typeof value === 'number';
+}
+
+// eslint-disable-next-line
+export function isObject(value: unknown): value is {[s: string]: any} {
+    return typeof value === 'object' && !Array.isArray(value);
+}
+
+export function isString(value: unknown): value is string {
+    return typeof value === 'string';
+}
+
 export function assertNumber(value: unknown, property?: string): asserts value is number {
     property = property ? `'${property}'` : 'Value';
-    if (typeof value !== 'number') throw new Error(`${property} is not a number, got ${typeof value} (${value.toString()})`);
+    if (typeof value !== 'number' || Number.isNaN(value)) throw new Error(`${property} is not a number, got ${typeof value} (${value?.toString()})`);
 }
 
 export function toNumber(value: unknown, property?: string): number {
@@ -516,19 +557,49 @@ export function toNumber(value: unknown, property?: string): number {
     return result;
 }
 
-export function getFromLookup<V>(value: unknown, lookup: {[s: number | string]: V}): V {
+export function getFromLookup<V>(value: unknown, lookup: {[s: number | string]: V}, defaultValue: V=undefined, keyIsBool: boolean=false): V {
     let result = undefined;
-    if (typeof value === 'string') {
-        result = lookup[value.toLowerCase()] ?? lookup[value.toUpperCase()];
-    } else if (typeof value === 'number') {
-        result = lookup[value];
+    if (!keyIsBool) {
+        if (typeof value === 'string') {
+            result = lookup[value] ?? lookup[value.toLowerCase()] ?? lookup[value.toUpperCase()];
+        } else if (typeof value === 'number') {
+            result = lookup[value];
+        } else {
+            throw new Error(`Expected string or number, got: ${typeof value}`);
+        }
+    } else {
+        // Silly hack, but boolean is not supported as index
+        if (typeof value === 'boolean') {
+            const stringValue = value.toString();
+            result = (lookup[stringValue] ?? lookup[stringValue.toLowerCase()] ?? lookup[stringValue.toUpperCase()]);
+        } else {
+            throw new Error(`Expected boolean, got: ${typeof value}`);
+        }
     }
-    if (result === undefined) throw new Error(`Expected one of: ${Object.keys(lookup).join(', ')}, got: '${value}'`);
-    return result;
+    if (result === undefined && defaultValue === undefined) {
+        throw new Error(`Value: '${value}' not found in: [${Object.keys(lookup).join(', ')}]`);
+    }
+    return result ?? defaultValue;
+}
+
+export function getFromLookupByValue(value: unknown, lookup: {[s: string]: unknown}, defaultValue: string=undefined): string {
+    for (const entry of Object.entries(lookup)) {
+        if (entry[1] === value) {
+            return entry[0];
+        }
+    }
+    if (defaultValue === undefined) {
+        throw new Error(`Expected one of: ${Object.values(lookup).join(', ')}, got: '${value}'`);
+    }
+    return defaultValue;
 }
 
 export function assertEndpoint(obj: unknown): asserts obj is Zh.Endpoint {
     if (obj?.constructor?.name?.toLowerCase() !== 'endpoint') throw new Error('Not an endpoint');
+}
+
+export function assertGroup(obj: unknown): asserts obj is Zh.Group {
+    if (obj?.constructor?.name?.toLowerCase() !== 'group') throw new Error('Not a group');
 }
 
 export function isEndpoint(obj: Zh.Endpoint | Zh.Group | Zh.Device): obj is Zh.Endpoint {
@@ -541,6 +612,14 @@ export function isDevice(obj: Zh.Endpoint | Zh.Group | Zh.Device): obj is Zh.Dev
 
 export function isGroup(obj: Zh.Endpoint | Zh.Group | Zh.Device): obj is Zh.Group {
     return obj.constructor.name.toLowerCase() === 'group';
+}
+
+export function isNumericExposeFeature(feature: Feature): feature is Numeric {
+    return feature?.type === 'numeric';
+}
+
+export function isLightExpose(expose: Expose): expose is Light {
+    return expose?.type === 'light';
 }
 
 exports.noOccupancySince = noOccupancySince;

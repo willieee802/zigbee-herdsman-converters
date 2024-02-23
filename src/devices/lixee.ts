@@ -11,7 +11,6 @@ const e = exposes.presets;
 import * as utils from '../lib/utils';
 import * as ota from '../lib/ota';
 import {Buffer} from 'buffer';
-import herdsman from '@willieee802/zigbee-herdsman';
 
 /* Start ZiPulses */
 
@@ -38,7 +37,7 @@ const tzSeMetering: Tz.Converter = {
         if (key === 'unitOfMeasure') {
             utils.assertString(value, 'unitOfMeasure');
             const val = unitsZiPulses.indexOf(value);
-            const payload = {768: {value: val, type: herdsman.Zcl.DataType.enum8}};
+            const payload = {768: {value: val, type: 48}};
             await entity.write('seMetering', payload);
             await entity.read('seMetering', [key]);
             return {state: {'unitOfMeasure': value}};
@@ -122,7 +121,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     lixee_private_fz: {
         cluster: 'liXeePrivate', // 0xFF66
         type: ['attributeReport', 'readResponse'],
@@ -142,10 +141,10 @@ const fzLocal = {
                 /* 0x0200 */ 'currentPrice',
                 /* 0x0201 */ 'currentIndexTarif',
                 /* 0x0202 */ 'currentDate',
-                /* 0x0203 */ 'activeEnerfyOutD01',
-                /* 0x0204 */ 'activeEnerfyOutD02',
-                /* 0x0205 */ 'activeEnerfyOutD03',
-                /* 0x0206 */ 'activeEnerfyOutD04',
+                /* 0x0203 */ 'activeEnergyOutD01',
+                /* 0x0204 */ 'activeEnergyOutD02',
+                /* 0x0205 */ 'activeEnergyOutD03',
+                /* 0x0206 */ 'activeEnergyOutD04',
                 /* 0x0207 */ 'injectedVA',
                 /* 0x0208 */ 'injectedVAMaxN',
                 /* 0x0209 */ 'injectedVAMaxN1',
@@ -185,20 +184,179 @@ const fzLocal = {
                         val = val.replace(/\s+/g, ' ').trim(); // Remove extra and leading spaces
                     }
                     switch (at) {
-                    case 'activeEnerfyOutD01':
-                    case 'activeEnerfyOutD02':
-                    case 'activeEnerfyOutD03':
-                    case 'activeEnerfyOutD04':
+                    case 'activeEnergyOutD01':
+                    case 'activeEnergyOutD02':
+                    case 'activeEnergyOutD03':
+                    case 'activeEnergyOutD04':
                         // @ts-expect-error
                         val = utils.precisionRound(val / 1000, kWh_p); // from Wh to kWh
                         break;
+                    case 'relais': {
+                        // relais is a decimal value representing the bits
+                        // of 8 virtual dry contacts.
+                        // 0 for an open relay
+                        // 1 for a closed relay
+                        // relais1 Hot water === legacy dry contact
+                        // relais2 Main heater
+                        // relais3 Secondary heater
+                        // relais4 AC or Heat pump
+                        // relais5 EV charge
+                        // relais6 Storage or injection
+                        // relais7 Unassigned
+                        // relais8 Unassigned
+                        const relais_breakout: KeyValue = {};
+                        for (let i = 0; i < 8; i++) {
+                            relais_breakout[at_snake + (i+1)] = (val & (1<<i)) >>> i;
+                        }
+                        result[at_snake + '_breakout'] = relais_breakout;
+                        break;
+                    }
+                    case 'statusRegister': {
+                        // val is a String representing hex.
+                        // Must convert
+                        const valhex = Number('0x' + val);
+                        const statusRegister_breakout: KeyValue = {};
+                        // contact sec
+                        statusRegister_breakout['contact_sec'] = (valhex & 0x1) == 1 ? 'ouvert' : 'ferme';
+                        // organe de coupure
+                        switch ((valhex >>> 1) & 0x7) {
+                        case 0:
+                            statusRegister_breakout['organe_coupure'] = 'ferme';
+                            break;
+                        case 1:
+                            statusRegister_breakout['organe_coupure'] = 'surpuissance';
+                            break;
+                        case 2:
+                            statusRegister_breakout['organe_coupure'] = 'surtension';
+                            break;
+                        case 3:
+                            statusRegister_breakout['organe_coupure'] = 'delestage';
+                            break;
+                        case 4:
+                            statusRegister_breakout['organe_coupure'] = 'ordre_CPL_Euridis';
+                            break;
+                        case 5:
+                            statusRegister_breakout['organe_coupure'] = 'surchauffe_surcourant';
+                            break;
+                        case 6:
+                            statusRegister_breakout['organe_coupure'] = 'surchauffe_simple';
+                            break;
+                        }
+                        // etat cache borne distributeur
+                        statusRegister_breakout['cache_borne_dist'] = ((valhex >>> 4) & 0x1) == 0 ? 'ferme' : 'ouvert';
+                        // bit 5 inutilise
+                        // surtension sur une des phases
+                        statusRegister_breakout['surtension_phase'] = (valhex >>> 6) & 0x1;
+                        // depassement puissance de reference
+                        statusRegister_breakout['depassement_ref_pow'] = (valhex >>> 7) & 0x1;
+                        // consommateur ou producteur
+                        statusRegister_breakout['producteur'] = (valhex >>> 8) & 0x1;
+                        // sens de l'energie active
+                        statusRegister_breakout['sens_energie_active'] = ((valhex >>> 9) & 0x1) == 0 ? 'positive' : 'negative';
+                        // tarif en cours sur le contrat fourniture
+                        statusRegister_breakout['tarif_four'] = 'index_' + (((valhex >>> 10) & 0xF) + 1);
+                        // tarif en cours sur le contrat distributeur
+                        statusRegister_breakout['tarif_dist'] = 'index_' + (((valhex >>> 14) & 0x3) + 1);
+                        // mode degrade de l'horloge
+                        statusRegister_breakout['horloge'] = ((valhex >>> 16) & 0x1) == 0 ? 'correcte' : 'degradee';
+                        // TIC historique ou standard
+                        statusRegister_breakout['type_tic'] = ((valhex >>> 17) & 0x1) == 0 ? 'historique' : 'standard';
+                        // bit 18 inutilise
+                        // etat sortie communicateur Euridis
+                        switch ((valhex >>> 19) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['comm_euridis'] = 'desactivee';
+                            break;
+                        case 1:
+                            statusRegister_breakout['comm_euridis'] = 'activee sans securite';
+                            break;
+                        case 3:
+                            statusRegister_breakout['comm_euridis'] = 'activee avec securite';
+                            break;
+                        }
+                        // etat CPL
+                        switch ((valhex >>> 21) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['etat_cpl'] = 'nouveau_deverrouille';
+                            break;
+                        case 1:
+                            statusRegister_breakout['etat_cpl'] = 'nouveau_verrouille';
+                            break;
+                        case 2:
+                            statusRegister_breakout['etat_cpl'] = 'enregistre';
+                            break;
+                        }
+                        // synchronisation CPL
+                        statusRegister_breakout['sync_cpl'] = ((valhex >>> 23) & 0x1) == 0 ? 'non_synchronise' : 'synchronise';
+                        // couleur du jour contrat TEMPO historique
+                        switch ((valhex >>> 24) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['tempo_jour'] = 'UNDEF';
+                            break;
+                        case 1:
+                            statusRegister_breakout['tempo_jour'] = 'BLEU';
+                            break;
+                        case 2:
+                            statusRegister_breakout['tempo_jour'] = 'BLANC';
+                            break;
+                        case 3:
+                            statusRegister_breakout['tempo_jour'] = 'ROUGE';
+                            break;
+                        }
+                        // couleur demain contrat TEMPO historique
+                        switch ((valhex >>> 26) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['tempo_demain'] = 'UNDEF';
+                            break;
+                        case 1:
+                            statusRegister_breakout['tempo_demain'] = 'BLEU';
+                            break;
+                        case 2:
+                            statusRegister_breakout['tempo_demain'] = 'BLANC';
+                            break;
+                        case 3:
+                            statusRegister_breakout['tempo_demain'] = 'ROUGE';
+                            break;
+                        }
+                        // preavis pointe mobile
+                        switch ((valhex >>> 28) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['preavis_pointe_mobile'] = 'AUCUN';
+                            break;
+                        case 1:
+                            statusRegister_breakout['preavis_pointe_mobile'] = 'PM1';
+                            break;
+                        case 2:
+                            statusRegister_breakout['preavis_pointe_mobile'] = 'PM2';
+                            break;
+                        case 3:
+                            statusRegister_breakout['preavis_pointe_mobile'] = 'PM3';
+                            break;
+                        }
+                        // pointe mobile
+                        switch ((valhex >>> 30) & 0x3) {
+                        case 0:
+                            statusRegister_breakout['pointe_mobile'] = 'AUCUN';
+                            break;
+                        case 1:
+                            statusRegister_breakout['pointe_mobile'] = 'PM1';
+                            break;
+                        case 2:
+                            statusRegister_breakout['pointe_mobile'] = 'PM2';
+                            break;
+                        case 3:
+                            statusRegister_breakout['pointe_mobile'] = 'PM3';
+                            break;
+                        }
+                        result[at_snake + '_breakout'] = statusRegister_breakout;
+                    }
                     }
                     result[at_snake] = val;
                 }
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     lixee_metering: {
         cluster: 'seMetering', // 0x0702
         type: ['attributeReport', 'readResponse'],
@@ -262,7 +420,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
 };
 
 
@@ -447,6 +605,25 @@ const tarifsDef = {
             'PPOINTE1',
         ],
     },
+    stand_H_SUPER_CREUSES: {
+        fname: 'Standard - Heures Super Creuses',
+        currentTarf: 'H SUPER CREUSES', excluded: [
+            'EASF07',
+            'EASF08',
+            'EASF09',
+            'EASF10',
+            'DPM1',
+            'DPM2',
+            'DPM3',
+            'FPM1',
+            'FPM2',
+            'FPM3',
+            'NJOURF',
+            'NJOURF+1',
+            'PJOURF+1',
+            'PPOINTE1',
+        ],
+    },
     stand_TEMPO: {
         fname: 'Standard - TEMPO',
         currentTarf: 'TEMPO', excluded: [
@@ -466,6 +643,28 @@ const tarifsDef = {
             'NJOURF+1',
             'PJOURF+1',
             'PPOINTE1',
+        ],
+    },
+    stand_ZEN_FLEX: {
+        fname: 'Standard - ZEN Flex',
+        currentTarf: 'ZEN Flex', excluded: [
+            'EASF05',
+            'EASF06',
+            'EASF07',
+            'EASF08',
+            'EASF09',
+            'EASF10',
+            'EASD03',
+            'EASD04',
+            'DPM1',
+            'DPM2',
+            'DPM3',
+            'FPM1',
+            'FPM2',
+            'FPM3',
+            'NJOURF',
+            'NJOURF+1',
+            'PJOURF+1',
         ],
     },
 };
@@ -519,10 +718,10 @@ const allPhaseData = [
     {cluster: clustersDef._0x0B04, att: 'reactivePowerPhC', reportable: true, onlyProducer: true, exposes: e.numeric('ERQ4', ea.STATE).withUnit('VArh').withProperty('reactive_power_ph_c').withDescription('Total reactive power (Q4)')},
     {cluster: clustersDef._0x0B04, att: 'rmsCurrent', reportable: true, onlyProducer: false, exposes: e.numeric('IRMS1', ea.STATE).withUnit('A').withProperty('rms_current').withDescription('RMS current')},
     {cluster: clustersDef._0x0B04, att: 'rmsVoltage', reportable: true, onlyProducer: false, exposes: e.numeric('URMS1', ea.STATE).withUnit('V').withProperty('rms_voltage').withDescription('RMS voltage')},
-    {cluster: clustersDef._0xFF66, att: 'activeEnerfyOutD01', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD01', ea.STATE).withUnit('kWh').withProperty('active_enerfy_out_d01').withDescription('Active energy withdrawn Distributor (index 01)')},
-    {cluster: clustersDef._0xFF66, att: 'activeEnerfyOutD02', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD02', ea.STATE).withUnit('kWh').withProperty('active_enerfy_out_d02').withDescription('Active energy withdrawn Distributor (index 02)')},
-    {cluster: clustersDef._0xFF66, att: 'activeEnerfyOutD03', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD03', ea.STATE).withUnit('kWh').withProperty('active_enerfy_out_d03').withDescription('Active energy withdrawn Distributor (index 03)')},
-    {cluster: clustersDef._0xFF66, att: 'activeEnerfyOutD04', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD04', ea.STATE).withUnit('kWh').withProperty('active_enerfy_out_d04').withDescription('Active energy withdrawn Distributor (index 04)')},
+    {cluster: clustersDef._0xFF66, att: 'activeEnergyOutD01', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD01', ea.STATE).withUnit('kWh').withProperty('active_energy_out_d01').withDescription('Active energy withdrawn Distributor (index 01)')},
+    {cluster: clustersDef._0xFF66, att: 'activeEnergyOutD02', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD02', ea.STATE).withUnit('kWh').withProperty('active_energy_out_d02').withDescription('Active energy withdrawn Distributor (index 02)')},
+    {cluster: clustersDef._0xFF66, att: 'activeEnergyOutD03', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD03', ea.STATE).withUnit('kWh').withProperty('active_energy_out_d03').withDescription('Active energy withdrawn Distributor (index 03)')},
+    {cluster: clustersDef._0xFF66, att: 'activeEnergyOutD04', reportable: true, report: {change: 100}, onlyProducer: false, exposes: e.numeric('EASD04', ea.STATE).withUnit('kWh').withProperty('active_energy_out_d04').withDescription('Active energy withdrawn Distributor (index 04)')},
     {cluster: clustersDef._0xFF66, att: 'currentDate', reportable: false, onlyProducer: false, exposes: e.text('DATE', ea.STATE).withProperty('current_date').withDescription('Current date and time')},
     {cluster: clustersDef._0xFF66, att: 'currentIndexTarif', reportable: false, onlyProducer: false, exposes: e.numeric('NTARF', ea.STATE).withProperty('current_index_tarif').withDescription('Current tariff index number')},
     {cluster: clustersDef._0xFF66, att: 'currentPrice', reportable: false, onlyProducer: false, exposes: e.text('LTARF', ea.STATE).withProperty('current_price').withDescription('Current supplier price label')},
@@ -712,8 +911,14 @@ function getCurrentConfig(device: Zh.Device, options: KeyValue, logger: Logger =
     case linkyMode == linkyModeDef.standard && tarifsDef.stand_BASE.currentTarf:
         myExpose = myExpose.filter((a) => !tarifsDef.stand_BASE.excluded.includes(a.exposes.name));
         break;
+    case linkyMode == linkyModeDef.standard && tarifsDef.stand_H_SUPER_CREUSES.currentTarf:
+        myExpose = myExpose.filter((a) => !tarifsDef.stand_H_SUPER_CREUSES.excluded.includes(a.exposes.name));
+        break;
     case linkyMode == linkyModeDef.standard && tarifsDef.stand_TEMPO.currentTarf:
         myExpose = myExpose.filter((a) => !tarifsDef.stand_TEMPO.excluded.includes(a.exposes.name));
+        break;
+    case linkyMode == linkyModeDef.standard && tarifsDef.stand_ZEN_FLEX.currentTarf:
+        myExpose = myExpose.filter((a) => !tarifsDef.stand_ZEN_FLEX.excluded.includes(a.exposes.name));
         break;
     default:
         break;
@@ -837,37 +1042,42 @@ const definitions: Definition[] = [
                 clearInterval(globalStore.getValue(device, 'interval'));
                 globalStore.clearValue(device, 'interval');
             } else if (!globalStore.hasValue(device, 'interval')) {
-                const seconds = options && options.measurement_poll_interval ? options.measurement_poll_interval : 60;
+                const seconds = options && options.measurement_poll_interval ? options.measurement_poll_interval : 600;
                 utils.assertNumber(seconds);
-                const measurement_poll_chunk = options && options.measurement_poll_chunk ? options.measurement_poll_chunk : 1;
+                const measurement_poll_chunk = options && options.measurement_poll_chunk ? options.measurement_poll_chunk : 4;
                 utils.assertNumber(measurement_poll_chunk);
 
-                const interval = setInterval(async () => {
-                    const currentExposes = getCurrentConfig(device, options)
-                        .filter((e) => !endpoint.configuredReportings.some((r) => r.cluster.name == e.cluster && r.attribute.name == e.att));
+                const setTimer = () => {
+                    const timer = setTimeout(async () => {
+                        try {
+                            const currentExposes = getCurrentConfig(device, options)
+                                .filter((e) => !endpoint.configuredReportings.some((r) => r.cluster.name == e.cluster && r.attribute.name == e.att));
 
-                    for (const key in clustersDef) {
-                        if (Object.hasOwnProperty.call(clustersDef, key)) {
-                            // @ts-expect-error
-                            const cluster = clustersDef[key];
-
-                            const targ = currentExposes.filter((e) => e.cluster == cluster).map((e) => e.att);
-                            if (targ.length) {
-                                let i; let j;
-                                // Split array by chunks
-                                for (i = 0, j = targ.length; i < j; i += measurement_poll_chunk) {
-                                    await endpoint
-                                        .read(cluster, targ.slice(i, i + measurement_poll_chunk), {manufacturerCode: null})
-                                        .catch((e) => {
-                                            // https://github.com/Koenkk/zigbee2mqtt/issues/11674
-                                            console.warn(`Failed to read zigbee attributes: ${e}`);
-                                        });
+                            for (const key in clustersDef) {
+                                if (Object.hasOwnProperty.call(clustersDef, key)) {
+                                    // @ts-expect-error
+                                    const cluster = clustersDef[key];
+                                    const targ = currentExposes.filter((e) => e.cluster == cluster).map((e) => e.att);
+                                    if (targ.length) {
+                                        let i; let j;
+                                        // Split array by chunks
+                                        for (i = 0, j = targ.length; i < j; i += measurement_poll_chunk) {
+                                            await endpoint
+                                                .read(cluster, targ.slice(i, i + measurement_poll_chunk), {manufacturerCode: null})
+                                                .catch((e) => {
+                                                    // https://github.com/Koenkk/zigbee2mqtt/issues/11674
+                                                    console.warn(`Failed to read zigbee attributes: ${e}`);
+                                                });
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                }, seconds * 1000);
-                globalStore.putValue(device, 'interval', interval);
+                        } catch (error) {/* Do nothing*/}
+                        setTimer();
+                    }, seconds * 1000);
+                    globalStore.putValue(device, 'interval', timer);
+                };
+                setTimer();
             }
         },
     },
@@ -878,7 +1088,7 @@ const definitions: Definition[] = [
         description: 'Lixee ZiPulses',
         fromZigbee: [fz.battery, fz.temperature, fz.metering, fzZiPulses],
         toZigbee: [tzSeMetering],
-        exposes: [e.battery_voltage(), e.temperature(),
+        exposes: [e.battery(), e.battery_voltage(), e.temperature(),
             e.numeric('multiplier', ea.STATE_SET).withValueMin(1).withValueMax(1000).withDescription('It is necessary to press the link button to update'),
             e.numeric('divisor', ea.STATE_SET).withValueMin(1).withValueMax(1000).withDescription('It is necessary to press the link button to update'),
             e.enum('unitOfMeasure', ea.STATE_SET, unitsZiPulses).withDescription('It is necessary to press the link button to update'),
@@ -893,4 +1103,5 @@ const definitions: Definition[] = [
     },
 ];
 
+export default definitions;
 module.exports = definitions;

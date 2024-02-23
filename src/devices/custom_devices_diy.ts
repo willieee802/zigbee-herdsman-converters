@@ -1,14 +1,27 @@
+import dataType from '@willieee802/zigbee-herdsman/dist/zcl/definition/dataType';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import * as legacy from '../lib/legacy';
 import tz from '../converters/toZigbee';
 import {Definition, Tz, Fz, KeyValueAny, KeyValue, Zh, Expose} from '../lib/types';
 import * as reporting from '../lib/reporting';
+import * as ota from '../lib/ota';
 import extend from '../lib/extend';
 import * as constants from '../lib/constants';
 const e = exposes.presets;
 const ea = exposes.access;
-import {calibrateAndPrecisionRoundOptions, getFromLookup, getKey, postfixWithEndpointName} from '../lib/utils';
+import {getFromLookup, getKey, postfixWithEndpointName, isEndpoint} from '../lib/utils';
+import {
+    light,
+    onOff,
+    batteryPercentage,
+    temperature,
+    humidity,
+    enumLookup,
+    binary,
+    numeric,
+    quirkAddEndpointCluster,
+} from '../lib/modernExtend';
 
 const switchTypesList = {
     'switch': 0x00,
@@ -25,7 +38,7 @@ const tzLocal = {
         convertGet: async (entity, key, meta) => {
             await entity.read('genBasic', [0x1337]);
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     node_config: {
         key: ['report_delay'],
         convertSet: async (entity, key, rawValue, meta) => {
@@ -40,7 +53,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     local_time: {
         key: ['local_time'],
         convertSet: async (entity, key, value, meta) => {
@@ -50,7 +63,7 @@ const tzLocal = {
             await firstEndpoint.write('genTime', {time: time});
             return {state: {local_time: time}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     co2_config: {
         key: ['auto_brightness', 'forced_recalibration', 'factory_reset_co2', 'long_chart_period', 'set_altitude',
             'manual_forced_recalibration', 'light_indicator', 'light_indicator_level'],
@@ -73,7 +86,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     temperature_config: {
         key: ['temperature_offset'],
         convertSet: async (entity, key, rawValue, meta) => {
@@ -87,7 +100,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     humidity_config: {
         key: ['humidity_offset'],
         convertSet: async (entity, key, rawValue, meta) => {
@@ -101,8 +114,8 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
-    termostat_config: {
+    } satisfies Tz.Converter,
+    thermostat_config: {
         key: ['high_temperature', 'low_temperature', 'enable_temperature'],
         convertSet: async (entity, key, rawValue, meta) => {
             const lookup = {'OFF': 0x00, 'ON': 0x01};
@@ -118,7 +131,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     hydrostat_config: {
         key: ['high_humidity', 'low_humidity', 'enable_humidity'],
         convertSet: async (entity, key, rawValue, meta) => {
@@ -135,7 +148,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     co2_gasstat_config: {
         key: ['high_gas', 'low_gas', 'enable_gas'],
         convertSet: async (entity, key, rawValue, meta) => {
@@ -152,7 +165,7 @@ const tzLocal = {
                 state: {[key]: rawValue},
             };
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     multi_zig_sw_switch_type: {
         key: ['switch_type_1', 'switch_type_2', 'switch_type_3', 'switch_type_4'],
         convertGet: async (entity, key, meta) => {
@@ -164,7 +177,20 @@ const tzLocal = {
             await entity.write('genOnOffSwitchCfg', payload);
             return {state: {[`${key}`]: value}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
+    ptvo_on_off: {
+        key: ['state'],
+        convertSet: async (entity, key, value, meta) => {
+            return await tz.on_off.convertSet(entity, key, value, meta);
+        },
+        convertGet: async (entity, key, meta) => {
+            const cluster = 'genOnOff';
+            if (isEndpoint(entity) && (entity.supportsInputCluster(cluster) || entity.supportsOutputCluster(cluster))) {
+                return await tz.on_off.convertGet(entity, key, meta);
+            }
+            return;
+        },
+    } satisfies Tz.Converter,
 };
 
 const fzLocal = {
@@ -176,7 +202,7 @@ const fzLocal = {
             if (msg.data['4919']) result['transmit_power'] = msg.data['4919'];
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     node_config: {
         cluster: 'genPowerCfg',
         type: ['attributeReport', 'readResponse'],
@@ -187,17 +213,17 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     co2: {
         cluster: 'msCO2',
         type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
             if (msg.data.hasOwnProperty('measuredValue')) {
                 const co2 = msg.data['measuredValue'];
-                return {co2: calibrateAndPrecisionRoundOptions(co2, options, 'co2')};
+                return {co2};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     co2_config: {
         cluster: 'msCO2',
         type: ['attributeReport', 'readResponse'],
@@ -229,7 +255,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     temperature_config: {
         cluster: 'msTemperatureMeasurement',
         type: 'readResponse',
@@ -240,7 +266,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     humidity_config: {
         cluster: 'msRelativeHumidity',
         type: 'readResponse',
@@ -251,8 +277,8 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
-    termostat_config: {
+    } satisfies Fz.Converter,
+    thermostat_config: {
         cluster: 'msTemperatureMeasurement',
         type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
@@ -268,7 +294,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     hydrostat_config: {
         cluster: 'msRelativeHumidity',
         type: ['attributeReport', 'readResponse'],
@@ -285,7 +311,7 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     co2_gasstat_config: {
         cluster: 'msCO2',
         type: ['attributeReport', 'readResponse'],
@@ -302,11 +328,10 @@ const fzLocal = {
             }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     humidity2: {
         cluster: 'msRelativeHumidity',
         type: ['attributeReport', 'readResponse'],
-        options: [exposes.options.precision('humidity'), exposes.options.calibration('humidity')],
         convert: (model, msg, publish, options, meta) => {
             // multi-endpoint version based on the stastard onverter 'fz.humidity'
             const humidity = parseFloat(msg.data['measuredValue']) / 100.0;
@@ -317,14 +342,13 @@ const fzLocal = {
             if (humidity >= 0 && humidity <= 100) {
                 const multiEndpoint = model.meta && model.meta.hasOwnProperty('multiEndpoint') && model.meta.multiEndpoint;
                 const property = (multiEndpoint)? postfixWithEndpointName('humidity', msg, model, meta): 'humidity';
-                return {[property]: calibrateAndPrecisionRoundOptions(humidity, options, 'humidity')};
+                return {[property]: humidity};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     illuminance2: {
         cluster: 'msIlluminanceMeasurement',
         type: ['attributeReport', 'readResponse'],
-        options: [exposes.options.calibration('illuminance', 'percentual'), exposes.options.calibration('illuminance_lux', 'percentual')],
         convert: (model, msg, publish, options, meta) => {
             // multi-endpoint version based on the stastard onverter 'fz.illuminance'
             // DEPRECATED: only return lux here (change illuminance_lux -> illuminance)
@@ -333,16 +357,12 @@ const fzLocal = {
             const multiEndpoint = model.meta && model.meta.hasOwnProperty('multiEndpoint') && model.meta.multiEndpoint;
             const property1 = (multiEndpoint)? postfixWithEndpointName('illuminance', msg, model, meta): 'illuminance';
             const property2 = (multiEndpoint)? postfixWithEndpointName('illuminance_lux', msg, model, meta): 'illuminance_lux';
-            return {
-                [property1]: calibrateAndPrecisionRoundOptions(illuminance, options, 'illuminance'),
-                [property2]: calibrateAndPrecisionRoundOptions(illuminanceLux, options, 'illuminance_lux'),
-            };
+            return {[property1]: illuminance, [property2]: illuminanceLux};
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     pressure2: {
         cluster: 'msPressureMeasurement',
         type: ['attributeReport', 'readResponse'],
-        options: [exposes.options.precision('pressure'), exposes.options.calibration('pressure')],
         convert: (model, msg, publish, options, meta) => {
             // multi-endpoint version based on the stastard onverter 'fz.pressure'
             let pressure = 0;
@@ -354,9 +374,9 @@ const fzLocal = {
             }
             const multiEndpoint = model.meta && model.meta.hasOwnProperty('multiEndpoint') && model.meta.multiEndpoint;
             const property = (multiEndpoint)? postfixWithEndpointName('pressure', msg, model, meta): 'pressure';
-            return {[property]: calibrateAndPrecisionRoundOptions(pressure, options, 'pressure')};
+            return {[property]: pressure};
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     multi_zig_sw_battery: {
         cluster: 'genPowerCfg',
         type: ['attributeReport', 'readResponse'],
@@ -365,7 +385,7 @@ const fzLocal = {
             const battery = (voltage - 2200) / 8;
             return {battery: battery > 100 ? 100 : battery, voltage: voltage};
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     multi_zig_sw_switch_buttons: {
         cluster: 'genMultistateInput',
         type: ['attributeReport', 'readResponse'],
@@ -376,7 +396,7 @@ const fzLocal = {
             const action = actionLookup[value];
             return {action: button + '_' + action};
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     multi_zig_sw_switch_config: {
         cluster: 'genOnOffSwitchCfg',
         type: ['readResponse', 'attributeReport'],
@@ -385,7 +405,7 @@ const fzLocal = {
             const {switchType} = msg.data;
             return {[`switch_type_${channel}`]: getKey(switchTypesList, switchType)};
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
 };
 
 function ptvoGetMetaOption(device: Zh.Device, key: string, defaultValue: unknown) {
@@ -511,7 +531,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.ptvo_multistate_action, legacy.fz.ptvo_switch_buttons, fz.ptvo_switch_uart,
             fz.ptvo_switch_analog_input, fz.brightness, fz.ignore_basic_report, fz.temperature,
             fzLocal.humidity2, fzLocal.pressure2, fzLocal.illuminance2],
-        toZigbee: [tz.ptvo_switch_trigger, tz.ptvo_switch_uart, tz.ptvo_switch_analog_input, tz.ptvo_switch_light_brightness, tz.on_off],
+        toZigbee: [tz.ptvo_switch_trigger, tz.ptvo_switch_uart, tz.ptvo_switch_analog_input, tz.ptvo_switch_light_brightness, tzLocal.ptvo_on_off],
         exposes: (device, options) => {
             const expose: Expose[] = [];
             const exposeDeviceOptions: KeyValue = {};
@@ -534,10 +554,31 @@ const definitions: Definition[] = [
             } else {
                 // device configuration description from a device
                 const deviceConfigArray = deviceConfig.split(/[\r\n]+/);
-                let prevEp = -1;
+                const allEndpoints: { [key: number]: string } = {};
+                const allEndpointsSorted = [];
                 for (let i = 0; i < deviceConfigArray.length; i++) {
                     const epConfig = deviceConfigArray[i];
                     const epId = parseInt(epConfig.substr(0, 1), 16);
+                    if (epId <= 0) {
+                        continue;
+                    }
+                    allEndpoints[epId] = epConfig;
+                    allEndpointsSorted.push(epId);
+                }
+
+                for (const endpoint of device.endpoints) {
+                    if (allEndpoints.hasOwnProperty(endpoint.ID)) {
+                        continue;
+                    }
+                    allEndpointsSorted.push(endpoint.ID);
+                    allEndpoints[endpoint.ID] = '';
+                }
+                allEndpointsSorted.sort();
+
+                let prevEp = -1;
+                for (let i = 0; i < allEndpointsSorted.length; i++) {
+                    const epId = allEndpointsSorted[i];
+                    const epConfig = allEndpoints[epId];
                     if (epId <= 0) {
                         continue;
                     }
@@ -545,11 +586,11 @@ const definitions: Definition[] = [
                     const epValueAccessRights = epConfig.substr(1, 1);
                     const epStateType = ((epValueAccessRights === 'W') || (epValueAccessRights === '*'))?
                         ea.STATE_SET: ea.STATE;
-                    let valueConfig = epConfig.substr(2);
-                    valueConfig = valueConfig.split(',');
-                    let valueId = (valueConfig[0])? valueConfig[0]: '';
-                    let valueDescription = (valueConfig[1])? valueConfig[1]: '';
-                    let valueUnit = (valueConfig[2] !== undefined)? valueConfig[2]: '';
+                    const valueConfig = epConfig.substr(2);
+                    const valueConfigItems = (valueConfig)? valueConfig.split(','): [];
+                    let valueId = (valueConfigItems[0])? valueConfigItems[0]: '';
+                    let valueDescription = (valueConfigItems[1])? valueConfigItems[1]: '';
+                    let valueUnit = (valueConfigItems[2] !== undefined)? valueConfigItems[2]: '';
                     const exposeEpOptions: KeyValue = {};
                     if (valueId === '*') {
                         // GPIO output (Generic)
@@ -573,7 +614,7 @@ const definitions: Definition[] = [
                             exposeObj = e.contact();
                         }
                         expose.push(exposeObj.withEndpoint(epName));
-                    } else if (valueConfig) {
+                    } else if (valueConfigItems.length > 0) {
                         let valueName = undefined; // name in Z2M
                         let valueNumIndex = undefined;
                         const idxPos = valueId.search(/(\d+)$/);
@@ -589,7 +630,7 @@ const definitions: Definition[] = [
                         // 1: value name (if empty, use the EP name)
                         // 2: description (if empty or undefined, use the value name)
                         // 3: units (if undefined, use the key name)
-                        const infoLookup: KeyValue = {
+                        const infoLookup: { [key: string]: string } = {
                             'C': 'temperature',
                             '%': 'humidity',
                             'm': 'altitude',
@@ -710,14 +751,14 @@ const definitions: Definition[] = [
         model: 'DNCKATSD001',
         vendor: 'Custom devices (DiY)',
         description: '[DNCKAT single key wired wall dimmable light switch](https://github.com/dzungpv/dnckatsw00x/)',
-        extend: extend.light_onoff_brightness(),
+        extend: [light()],
     },
     {
         zigbeeModel: ['DNCKAT_S001'],
         model: 'DNCKATSW001',
         vendor: 'Custom devices (DiY)',
         description: '[DNCKAT single key wired wall light switch](https://github.com/dzungpv/dnckatsw00x/)',
-        extend: extend.switch(),
+        extend: [onOff()],
     },
     {
         zigbeeModel: ['DNCKAT_S002'],
@@ -1113,9 +1154,9 @@ const definitions: Definition[] = [
         vendor: 'Custom devices (DiY)',
         description: '[EFEKTA CO2 Smart Monitor, ws2812b indicator, can control the relay, binding](https://efektalab.com/CO2_Monitor)',
         fromZigbee: [fz.temperature, fz.humidity, fzLocal.co2, fzLocal.co2_config, fzLocal.temperature_config,
-            fzLocal.humidity_config, fzLocal.termostat_config, fzLocal.hydrostat_config, fzLocal.co2_gasstat_config],
+            fzLocal.humidity_config, fzLocal.thermostat_config, fzLocal.hydrostat_config, fzLocal.co2_gasstat_config],
         toZigbee: [tzLocal.co2_config, tzLocal.temperature_config, tzLocal.humidity_config,
-            tzLocal.termostat_config, tzLocal.hydrostat_config, tzLocal.co2_gasstat_config],
+            tzLocal.thermostat_config, tzLocal.hydrostat_config, tzLocal.co2_gasstat_config],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(1);
             const clusters = ['msTemperatureMeasurement', 'msRelativeHumidity', 'msCO2'];
@@ -1164,9 +1205,9 @@ const definitions: Definition[] = [
         model: 'SNZB-02_EFEKTA',
         vendor: 'Custom devices (DiY)',
         description: 'Alternative firmware for the SONOFF SNZB-02 sensor from EfektaLab, DIY',
-        fromZigbee: [fz.SNZB02_temperature, fz.SNZB02_humidity, fz.battery, fzLocal.termostat_config,
+        fromZigbee: [fz.SNZB02_temperature, fz.SNZB02_humidity, fz.battery, fzLocal.thermostat_config,
             fzLocal.hydrostat_config, fzLocal.node_config],
-        toZigbee: [tzLocal.termostat_config, tzLocal.hydrostat_config, tzLocal.node_config],
+        toZigbee: [tzLocal.thermostat_config, tzLocal.hydrostat_config, tzLocal.node_config],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, [
@@ -1241,6 +1282,276 @@ const definitions: Definition[] = [
             await endpoint.read('genBasic', ['modelId', 'swBuildId', 'powerSource']);
         },
     },
+    {
+        // https://github.com/devbis/z03mmc/
+        zigbeeModel: ['LYWSD03MMC'],
+        model: 'LYWSD03MMC',
+        vendor: 'Custom devices (DiY)',
+        description: 'Xiaomi temperature & humidity sensor with custom firmware',
+        extend: [
+            quirkAddEndpointCluster({
+                endpointID: 1,
+                outputClusters: [],
+                inputClusters: [
+                    'genPowerCfg',
+                    'msTemperatureMeasurement',
+                    'msRelativeHumidity',
+                    'hvacUserInterfaceCfg',
+                ],
+            }),
+            batteryPercentage(),
+            temperature({reporting: {min: 10, max: 300, change: 10}}),
+            humidity({reporting: {min: 10, max: 300, change: 50}}),
+            enumLookup({
+                name: 'temperature_display_mode',
+                lookup: {'celsius': 0, 'fahrenheit': 1},
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: 'tempDisplayMode',
+                description: 'The units of the temperature displayed on the device screen.',
+            }),
+            binary({
+                name: 'show_smiley',
+                valueOn: ['SHOW', 1],
+                valueOff: ['HIDE', 0],
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0010, type: dataType.boolean},
+                description: 'Whether to show a smiley on the device screen.',
+            }),
+            binary({
+                name: 'enable_display',
+                valueOn: ['ON', 1],
+                valueOff: ['OFF', 0],
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0011, type: dataType.boolean},
+                description: 'Whether to turn display on/off.',
+            }),
+            numeric({
+                name: 'temperature_calibration',
+                unit: '°C',
+                cluster: 'msTemperatureMeasurement',
+                attribute: {ID: 0x0010, type: dataType.int16},
+                valueMin: -100.0,
+                valueMax: 100.0,
+                valueStep: 0.01,
+                scale: 100,
+                description: 'The temperature calibration offset is set in 0.01° steps.',
+            }),
+            numeric({
+                name: 'humidity_calibration',
+                unit: '%',
+                cluster: 'msRelativeHumidity',
+                attribute: {ID: 0x0010, type: dataType.int16},
+                valueMin: -100.0,
+                valueMax: 100.0,
+                valueStep: 0.01,
+                scale: 100,
+                description: 'The humidity calibration offset is set in 0.01 % steps.',
+            }),
+            numeric({
+                name: 'comfort_temperature_min',
+                unit: '°C',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0102, type: dataType.int16},
+                valueMin: -100.0,
+                valueMax: 100.0,
+                scale: 100,
+                description: 'Comfort parameters/Temperature minimum, in 0.01°C steps.',
+            }),
+            numeric({
+                name: 'comfort_temperature_max',
+                unit: '°C',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0103, type: dataType.int16},
+                valueMin: -100.0,
+                valueMax: 100.0,
+                scale: 100,
+                description: 'Comfort parameters/Temperature maximum, in 0.01°C steps.',
+            }),
+            numeric({
+                name: 'comfort_humidity_min',
+                unit: '%',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0104, type: dataType.uint16},
+                valueMin: 0.0,
+                valueMax: 100.0,
+                scale: 100,
+                description: 'Comfort parameters/Humidity minimum, in 0.01% steps.',
+            }),
+            numeric({
+                name: 'comfort_humidity_max',
+                unit: '%',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0105, type: dataType.uint16},
+                valueMin: 0.0,
+                valueMax: 100.0,
+                scale: 100,
+                description: 'Comfort parameters/Humidity maximum, in 0.01% steps.',
+            }),
+        ],
+        ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint, logger) => {
+            const endpoint = device.getEndpoint(1);
+            const bindClusters = ['msTemperatureMeasurement', 'msRelativeHumidity', 'genPowerCfg'];
+            await reporting.bind(endpoint, coordinatorEndpoint, bindClusters);
+            await reporting.temperature(endpoint, {min: 10, max: 300, change: 10});
+            await reporting.humidity(endpoint, {min: 10, max: 300, change: 50});
+            await reporting.batteryPercentageRemaining(endpoint);
+            try {
+                await endpoint.read('hvacThermostat', [0x0010, 0x0011, 0x0102, 0x0103, 0x0104, 0x0105]);
+                await endpoint.read('msTemperatureMeasurement', [0x0010]);
+                await endpoint.read('msRelativeHumidity', [0x0010]);
+            } catch (e) {
+                /* backward compatibility */
+            }
+        },
+    },
+    {
+        zigbeeModel: ['MHO-C401N'],
+        model: 'MHO-C401N',
+        vendor: 'Custom devices (DiY)',
+        description: 'Xiaomi temperature & humidity sensor with custom firmware',
+        extend: [
+            quirkAddEndpointCluster({
+                endpointID: 1,
+                outputClusters: [
+                    'hvacUserInterfaceCfg',
+                ],
+                inputClusters: [
+                    'genPowerCfg',
+                    'msTemperatureMeasurement',
+                    'msRelativeHumidity',
+                    'hvacUserInterfaceCfg',
+                ],
+            }),
+            batteryPercentage(),
+            temperature({reporting: {min: 10, max: 300, change: 10}}),
+            humidity({reporting: {min: 10, max: 300, change: 50}}),
+            // Temperature display and show smile.
+            // For details, see: https://github.com/pvvx/ZigbeeTLc/issues/28#issue-2033984519
+            enumLookup({
+                name: 'temperature_display_mode',
+                lookup: {'celsius': 0, 'fahrenheit': 1},
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: 'tempDisplayMode',
+                description: 'The units of the temperature displayed on the device screen.',
+            }),
+            binary({
+                name: 'show_smile',
+                valueOn: ['HIDE', 1],
+                valueOff: ['SHOW', 0],
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: 'programmingVisibility',
+                description: 'Whether to show a smile on the device screen.',
+            }),
+            // Setting offsets for temperature and humidity.
+            // For details, see: https://github.com/pvvx/ZigbeeTLc/issues/30
+            numeric({
+                name: 'temperature_calibration',
+                unit: 'C',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0100, type: 40},
+                valueMin: -12.7,
+                valueMax: 12.7,
+                valueStep: 0.1,
+                scale: 10,
+                description: 'The temperature calibration, in 0.1° steps. Requires v0.1.1.6 or newer.',
+            }),
+            numeric({
+                name: 'humidity_calibration',
+                unit: '%',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0101, type: 40},
+                valueMin: -12.7,
+                valueMax: 12.7,
+                valueStep: 0.1,
+                scale: 10,
+                description: 'The humidity offset is set in 0.1 % steps. Requires v0.1.1.6 or newer.',
+            }),
+            // Comfort parameters.
+            // For details, see: https://github.com/pvvx/ZigbeeTLc/issues/28#issuecomment-1855763432
+            numeric({
+                name: 'comfort_temperature_min',
+                unit: 'C',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0102, type: 40},
+                valueMin: -127,
+                valueMax: 127,
+                description: 'Comfort parameters/Temperature minimum, in 1° steps. Requires v0.1.1.7 or newer.',
+            }),
+            numeric({
+                name: 'comfort_temperature_max',
+                unit: 'C',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0103, type: 40},
+                valueMin: -127,
+                valueMax: 127,
+                description: 'Comfort parameters/Temperature maximum, in 1° steps. Requires v0.1.1.7 or newer.',
+            }),
+            numeric({
+                name: 'comfort_humidity_min',
+                unit: '%',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0104, type: 32},
+                valueMin: 0,
+                valueMax: 100,
+                description: 'Comfort parameters/Humidity minimum, in 1% steps. Requires v0.1.1.7 or newer.',
+            }),
+            numeric({
+                name: 'comfort_humidity_max',
+                unit: '%',
+                cluster: 'hvacUserInterfaceCfg',
+                attribute: {ID: 0x0105, type: 32},
+                valueMin: 0,
+                valueMax: 100,
+                description: 'Comfort parameters/Humidity maximum, in 1% steps. Requires v0.1.1.7 or newer.',
+            }),
+        ],
+        ota: ota.zigbeeOTA,
+    },
+    {
+        zigbeeModel: ['QUAD-ZIG-SW'],
+        model: 'QUAD-ZIG-SW',
+        vendor: 'smarthjemmet.dk',
+        description: '[FUGA compatible switch from Smarthjemmet.dk](https://smarthjemmet.dk)',
+        fromZigbee: [fz.ignore_basic_report, fzLocal.multi_zig_sw_switch_buttons, fzLocal.multi_zig_sw_battery, fzLocal.multi_zig_sw_switch_config],
+        toZigbee: [tzLocal.multi_zig_sw_switch_type],
+        exposes: [
+            ...[e.enum('switch_type_1', exposes.access.ALL, Object.keys(switchTypesList)).withEndpoint('button_1')],
+            ...[e.enum('switch_type_2', exposes.access.ALL, Object.keys(switchTypesList)).withEndpoint('button_2')],
+            ...[e.enum('switch_type_3', exposes.access.ALL, Object.keys(switchTypesList)).withEndpoint('button_3')],
+            ...[e.enum('switch_type_4', exposes.access.ALL, Object.keys(switchTypesList)).withEndpoint('button_4')],
+            e.battery(), e.action(['single', 'double', 'triple', 'hold', 'release']), e.battery_voltage(),
+        ],
+        meta: {multiEndpoint: true},
+        endpoint: (device) => {
+            return {button_1: 2, button_2: 3, button_3: 4, button_4: 5};
+        },
+        configure: async (device, coordinatorEndpoint, logger) => {
+            const endpoint = device.getEndpoint(1);
+            await endpoint.read('genBasic', ['modelId', 'swBuildId', 'powerSource']);
+        },
+    },
+    {
+        zigbeeModel: ['ptvo_counter_2ch'],
+        model: 'ptvo_counter_2ch',
+        vendor: 'Custom devices (DiY)',
+        description: '2 channel counter',
+        fromZigbee: [fz.ignore_basic_report, fz.battery, fz.ptvo_switch_analog_input, fz.on_off],
+        toZigbee: [tz.ptvo_switch_trigger, tz.ptvo_switch_analog_input, tz.on_off],
+        exposes: [e.battery(),
+            e.enum('l3', ea.ALL, ['set']).withDescription('Counter value. Write zero or positive value to set a counter value. ' +
+                'Write a negative value to set a wakeup interval in minutes'),
+            e.enum('l5', ea.ALL, ['set']).withDescription('Counter value. Write zero or positive value to set a counter value. ' +
+                'Write a negative value to set a wakeup interval in minutes'),
+            e.switch().withEndpoint('l6'),
+            e.battery_voltage(),
+        ],
+        meta: {multiEndpoint: true},
+        endpoint: (device) => {
+            return {l3: 3, l5: 5, l6: 6};
+        },
+    },
 ];
 
+export default definitions;
 module.exports = definitions;

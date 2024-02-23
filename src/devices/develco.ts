@@ -59,7 +59,23 @@ const develco = {
                     return fz.electrical_measurement.convert(model, msg, publish, options, meta);
                 }
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
+        total_power: {
+            cluster: 'haElectricalMeasurement',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                const result: KeyValue = {};
+                if (msg.data.hasOwnProperty('totalActivePower') && msg.data['totalActivePower'] !== -0x80000000) {
+                    result[utils.postfixWithEndpointName('power', msg, model, meta)] =
+                        msg.data['totalActivePower'];
+                }
+                if (msg.data.hasOwnProperty('totalReactivePower') && msg.data['totalReactivePower'] !== -0x80000000) {
+                    result[utils.postfixWithEndpointName('power_reactive', msg, model, meta)] =
+                        msg.data['totalReactivePower'];
+                }
+                return result;
+            },
+        } satisfies Fz.Converter,
         device_temperature: {
             ...fz.device_temperature,
             convert: (model, msg, publish, options, meta) => {
@@ -67,7 +83,7 @@ const develco = {
                     return fz.device_temperature.convert(model, msg, publish, options, meta);
                 }
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         temperature: {
             ...fz.temperature,
             convert: (model, msg, publish, options, meta) => {
@@ -75,15 +91,15 @@ const develco = {
                     return fz.temperature.convert(model, msg, publish, options, meta);
                 }
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         metering: {
             ...fz.metering,
             convert: (model, msg, publish, options, meta) => {
-                if (msg.data.instantaneousDemand !== -0x800000) {
+                if (msg.data.instantaneousDemand !== -0x800000 && msg.data.currentSummDelivered?.[1] !== 0) {
                     return fz.metering.convert(model, msg, publish, options, meta);
                 }
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         pulse_configuration: {
             cluster: 'seMetering',
             type: ['attributeReport', 'readResponse'],
@@ -96,7 +112,7 @@ const develco = {
 
                 return result;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         interface_mode: {
             cluster: 'seMetering',
             type: ['attributeReport', 'readResponse'],
@@ -105,7 +121,6 @@ const develco = {
                 if (msg.data.hasOwnProperty('develcoInterfaceMode')) {
                     result[utils.postfixWithEndpointName('interface_mode', msg, model, meta)] =
                         constants.develcoInterfaceMode.hasOwnProperty(msg.data['develcoInterfaceMode']) ?
-                            // @ts-expect-error
                             constants.develcoInterfaceMode[msg.data['develcoInterfaceMode']] :
                             msg.data['develcoInterfaceMode'];
                 }
@@ -116,7 +131,7 @@ const develco = {
 
                 return result;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         fault_status: {
             cluster: 'genBinaryInput',
             type: ['attributeReport', 'readResponse'],
@@ -131,11 +146,10 @@ const develco = {
                 }
                 return result;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         voc: {
             cluster: 'develcoSpecificAirQuality',
             type: ['attributeReport', 'readResponse'],
-            options: [exposes.options.precision('voc'), exposes.options.calibration('voc')],
             convert: (model, msg, publish, options, meta) => {
                 // from Sensirion_Gas_Sensors_SGP3x_TVOC_Concept.pdf
                 // "The mean molar mass of this mixture is 110 g/mol and hence,
@@ -163,28 +177,27 @@ const develco = {
                 } else {
                     airQuality = 'unknown';
                 }
-                return {[vocProperty]: utils.calibrateAndPrecisionRoundOptions(voc, options, 'voc'), [airQualityProperty]: airQuality};
+                return {[vocProperty]: voc, [airQualityProperty]: airQuality};
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         voc_battery: {
             cluster: 'genPowerCfg',
             type: ['attributeReport', 'readResponse'],
-            convert: (model, msg, publish, options, meta) => {
+            convert: async (model, msg, publish, options, meta) => {
                 /*
                  * Per the technical documentation for AQSZB-110:
                  * To detect low battery the system can monitor the "BatteryVoltage" by setting up a reporting interval of every 12 hour.
                  * When a voltage of 2.5V is measured the battery should be replaced.
                  * Low batt LED indication–RED LED will blink twice every 60 second.
                  */
-                const result = fz.battery.convert(model, msg, publish, options, meta);
-                result.battery_low = (result.voltage <= 2500);
+                const result = await fz.battery.convert(model, msg, publish, options, meta);
+                if (result) result.battery_low = (result.voltage <= 2500);
                 return result;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         led_control: {
             cluster: 'genBasic',
             type: ['attributeReport', 'readResponse'],
-            options: [],
             convert: (model, msg, publish, options, meta) => {
                 const state: KeyValue = {};
 
@@ -194,11 +207,10 @@ const develco = {
 
                 return state;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         ias_occupancy_timeout: {
             cluster: 'ssIasZone',
             type: ['attributeReport', 'readResponse'],
-            options: [],
             convert: (model, msg, publish, options, meta) => {
                 const state: KeyValue = {};
 
@@ -208,7 +220,7 @@ const develco = {
 
                 return state;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
         input: {
             cluster: 'genBinaryInput',
             type: ['attributeReport', 'readResponse'],
@@ -220,7 +232,7 @@ const develco = {
                 }
                 return result;
             },
-        } as Fz.Converter,
+        } satisfies Fz.Converter,
     },
     tz: {
         pulse_configuration: {
@@ -232,7 +244,7 @@ const develco = {
             convertGet: async (entity, key, meta) => {
                 await entity.read('seMetering', ['develcoPulseConfiguration'], manufacturerOptions);
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
         interface_mode: {
             key: ['interface_mode'],
             convertSet: async (entity, key, value, meta) => {
@@ -243,14 +255,14 @@ const develco = {
             convertGet: async (entity, key, meta) => {
                 await entity.read('seMetering', ['develcoInterfaceMode'], manufacturerOptions);
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
         current_summation: {
             key: ['current_summation'],
             convertSet: async (entity, key, value, meta) => {
                 await entity.write('seMetering', {'develcoCurrentSummation': value}, manufacturerOptions);
                 return {state: {'current_summation': value}};
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
         led_control: {
             key: ['led_control'],
             convertSet: async (entity, key, value, meta) => {
@@ -261,14 +273,14 @@ const develco = {
             convertGet: async (entity, key, meta) => {
                 await entity.read('genBasic', ['develcoLedControl'], manufacturerOptions);
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
         ias_occupancy_timeout: {
             key: ['occupancy_timeout'],
             convertSet: async (entity, key, value, meta) => {
                 let timeoutValue = utils.toNumber(value, 'occupancy_timeout');
-                if (timeoutValue < 20) {
-                    meta.logger.warn(`Minimum occupancy_timeout is 20, using 20 instead of ${timeoutValue}!`);
-                    timeoutValue = 20;
+                if (timeoutValue < 5) {
+                    meta.logger.warn(`Minimum occupancy_timeout is 5, using 5 instead of ${timeoutValue}!`);
+                    timeoutValue = 5;
                 }
                 await entity.write('ssIasZone', {'develcoAlarmOffDelay': timeoutValue}, manufacturerOptions);
                 return {state: {occupancy_timeout: timeoutValue}};
@@ -276,13 +288,13 @@ const develco = {
             convertGet: async (entity, key, meta) => {
                 await entity.read('ssIasZone', ['develcoAlarmOffDelay'], manufacturerOptions);
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
         input: {
             key: ['input'],
             convertGet: async (entity, key, meta) => {
                 await entity.read('genBinaryInput', ['presentValue']);
             },
-        } as Tz.Converter,
+        } satisfies Tz.Converter,
     },
 };
 
@@ -292,21 +304,23 @@ const definitions: Definition[] = [
         model: 'SPLZB-131',
         vendor: 'Develco',
         description: 'Power plug',
-        fromZigbee: [fz.on_off, develco.fz.electrical_measurement, develco.fz.metering],
+        fromZigbee: [fz.on_off, develco.fz.electrical_measurement, develco.fz.metering, develco.fz.device_temperature],
         toZigbee: [tz.on_off],
-        exposes: [e.switch(), e.power(), e.power_reactive(), e.current(), e.voltage(), e.energy(), e.ac_frequency()],
+        ota: ota.zigbeeOTA,
+        exposes: [e.switch(), e.power(), e.power_reactive(), e.current(), e.voltage(), e.energy(), e.device_temperature(), e.ac_frequency()],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(2);
-            await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
+            await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering', 'genDeviceTempCfg']);
             await reporting.onOff(endpoint);
+            await reporting.deviceTemperature(endpoint);
             await reporting.readEletricalMeasurementMultiplierDivisors(endpoint, true);
-            await reporting.activePower(endpoint);
-            await reporting.reactivePower(endpoint);
-            await reporting.rmsCurrent(endpoint);
-            await reporting.rmsVoltage(endpoint);
+            await reporting.activePower(endpoint, {change: 10}); // Power reports with every 10W change
+            await reporting.rmsCurrent(endpoint, {change: 20}); // Current reports with every 20mA change
+            await reporting.rmsVoltage(endpoint, {min: constants.repInterval.MINUTES_5, change: 400}); // Limit reports to every 5m, or 4V
             await reporting.readMeteringMultiplierDivisor(endpoint);
-            await reporting.currentSummDelivered(endpoint);
-            await reporting.acFrequency(endpoint);
+            await reporting.currentSummDelivered(endpoint, {change: [0, 20]}); // Limit reports to once every 5m, or 0.02kWh
+            await reporting.instantaneousDemand(endpoint, {min: constants.repInterval.MINUTES_5, change: 10});
+            await reporting.acFrequency(endpoint, {change: 10});
         },
         endpoint: (device) => {
             return {default: 2};
@@ -319,6 +333,7 @@ const definitions: Definition[] = [
         description: 'Power plug',
         fromZigbee: [fz.on_off, develco.fz.electrical_measurement, develco.fz.metering, develco.fz.device_temperature],
         toZigbee: [tz.on_off],
+        ota: ota.zigbeeOTA,
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy(), e.device_temperature(), e.ac_frequency()],
         options: [exposes.options.precision(`ac_frequency`)],
         configure: async (device, coordinatorEndpoint, logger) => {
@@ -347,6 +362,7 @@ const definitions: Definition[] = [
         description: 'Power plug (type G)',
         fromZigbee: [fz.on_off, develco.fz.electrical_measurement, develco.fz.metering, develco.fz.device_temperature],
         toZigbee: [tz.on_off],
+        ota: ota.zigbeeOTA,
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy(), e.device_temperature()],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(2);
@@ -372,6 +388,7 @@ const definitions: Definition[] = [
         description: 'Power plug',
         fromZigbee: [fz.on_off, develco.fz.electrical_measurement, develco.fz.metering],
         toZigbee: [tz.on_off],
+        ota: ota.zigbeeOTA,
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy(), e.ac_frequency()],
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(2);
@@ -419,7 +436,7 @@ const definitions: Definition[] = [
         model: 'EMIZB-132',
         vendor: 'Develco',
         description: 'Wattle AMS HAN power-meter sensor',
-        fromZigbee: [develco.fz.metering, develco.fz.electrical_measurement],
+        fromZigbee: [develco.fz.metering, develco.fz.electrical_measurement, develco.fz.total_power],
         toZigbee: [tz.EMIZB_132_mode],
         ota: ota.zigbeeOTA,
         configure: async (device, coordinatorEndpoint, logger) => {
@@ -432,19 +449,23 @@ const definitions: Definition[] = [
                 await reporting.readEletricalMeasurementMultiplierDivisors(endpoint);
                 await reporting.rmsVoltage(endpoint);
                 await reporting.rmsCurrent(endpoint);
-                await reporting.activePower(endpoint);
+                await endpoint.configureReporting('haElectricalMeasurement', [{attribute: 'totalActivePower', minimumReportInterval: 5,
+                    maximumReportInterval: 3600, reportableChange: 1}], manufacturerOptions);
+                await endpoint.configureReporting('haElectricalMeasurement', [{attribute: 'totalReactivePower', minimumReportInterval: 5,
+                    maximumReportInterval: 3600, reportableChange: 1}], manufacturerOptions);
             } catch (e) {
                 e;
             }
 
             await reporting.readMeteringMultiplierDivisor(endpoint);
             endpoint.saveClusterAttributeKeyValue('seMetering', {divisor: 1000, multiplier: 1});
-            await reporting.instantaneousDemand(endpoint);
             await reporting.currentSummDelivered(endpoint);
             await reporting.currentSummReceived(endpoint);
             await develco.configure.read_sw_hw_version(device, logger);
         },
-        exposes: [e.power(), e.energy(), e.current(), e.voltage(), e.current_phase_b(), e.voltage_phase_b(), e.current_phase_c(),
+        exposes: [e.numeric('power', ea.STATE).withUnit('W').withDescription('Total active power'),
+            e.numeric('power_reactive', ea.STATE).withUnit('VAr').withDescription('Total reactive power'),
+            e.energy(), e.current(), e.voltage(), e.current_phase_b(), e.voltage_phase_b(), e.current_phase_c(),
             e.voltage_phase_c()],
         onEvent: async (type, data, device) => {
             if (type === 'message' && data.type === 'attributeReport' && data.cluster === 'seMetering' && data.data['divisor']) {
@@ -459,6 +480,10 @@ const definitions: Definition[] = [
         model: 'SMSZB-120',
         vendor: 'Develco',
         description: 'Smoke detector with siren',
+        whiteLabel: [
+            {vendor: 'Frient', model: '94430', description: 'Smart Intelligent Smoke Alarm'},
+            {vendor: 'Cavius', model: '2103', description: 'RF SMOKE ALARM, 5 YEAR 65MM'},
+        ],
         fromZigbee: [develco.fz.temperature, fz.battery, fz.ias_smoke_alarm_1_develco, fz.ignore_basic_report,
             fz.ias_enroll, fz.ias_wd, develco.fz.fault_status],
         toZigbee: [tz.warning, tz.ias_max_duration, tz.warning_simple],
@@ -518,9 +543,13 @@ const definitions: Definition[] = [
         model: 'HESZB-120',
         vendor: 'Develco',
         description: 'Fire detector with siren',
+        whiteLabel: [
+            {vendor: 'Frient', model: '94431', description: 'Smart Intelligent Heat Alarm'},
+        ],
         fromZigbee: [develco.fz.temperature, fz.battery, fz.ias_smoke_alarm_1_develco, fz.ignore_basic_report,
             fz.ias_enroll, fz.ias_wd, develco.fz.fault_status],
         toZigbee: [tz.warning, tz.ias_max_duration, tz.warning_simple],
+        ota: ota.zigbeeOTA,
         meta: {battery: {voltageToPercentage: '3V_2500'}},
         configure: async (device, coordinatorEndpoint, logger) => {
             const endpoint = device.getEndpoint(35);
@@ -603,7 +632,7 @@ const definitions: Definition[] = [
         },
     },
     {
-        zigbeeModel: ['WISZB-138'],
+        zigbeeModel: ['WISZB-138', 'GWA1513_WindowSensor'],
         model: 'WISZB-138',
         vendor: 'Develco',
         description: 'Window sensor',
@@ -632,7 +661,7 @@ const definitions: Definition[] = [
         exposes: [e.occupancy(), e.battery_low(), e.tamper()],
     },
     {
-        zigbeeModel: ['MOSZB-140'],
+        zigbeeModel: ['MOSZB-140', 'GWA1511_MotionSensor'],
         model: 'MOSZB-140',
         vendor: 'Develco',
         description: 'Motion sensor',
@@ -646,7 +675,7 @@ const definitions: Definition[] = [
             dynExposes.push(e.occupancy());
             if (device && device.softwareBuildID && Number(device.softwareBuildID.split('.')[0]) >= 3) {
                 dynExposes.push(e.numeric('occupancy_timeout', ea.ALL).withUnit('s').
-                    withValueMin(20).withValueMax(65535));
+                    withValueMin(5).withValueMax(65535));
             }
             dynExposes.push(e.temperature());
             dynExposes.push(e.illuminance_lux());
@@ -700,7 +729,10 @@ const definitions: Definition[] = [
         exposes: [e.occupancy(), e.battery_low()],
     },
     {
-        zigbeeModel: ['HMSZB-110'],
+        whiteLabel: [
+            {vendor: 'Frient', model: 'HMSZB-120', description: 'Temperature & humidity sensor', fingerprint: [{modelID: 'HMSZB-120'}]},
+        ],
+        zigbeeModel: ['HMSZB-110', 'HMSZB-120'],
         model: 'HMSZB-110',
         vendor: 'Develco',
         description: 'Temperature & humidity sensor',
@@ -946,4 +978,5 @@ const definitions: Definition[] = [
     },
 ];
 
+export default definitions;
 module.exports = definitions;

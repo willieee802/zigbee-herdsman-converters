@@ -5,11 +5,15 @@ import tz from '../converters/toZigbee';
 import fz from '../converters/fromZigbee';
 import * as utils from './utils';
 import extend from './extend';
-import {Tuya, OnEventType, OnEventData, Zh, KeyValue, Tz, Logger, Fz, Expose, OnEvent} from './types';
+import * as modernExtend from './modernExtend';
+import {Tuya, OnEventType, OnEventData, Zh, KeyValue, Tz, Logger, Fz, Expose, OnEvent, ModernExtend, Range, KeyValueNumberString} from './types';
+// import {Color} from './color';
 const e = exposes.presets;
 const ea = exposes.access;
 
-const dataTypes = {
+interface KeyValueStringEnum {[s: string]: Enum}
+
+export const dataTypes = {
     raw: 0, // [ bytes ]
     bool: 1, // [0/1]
     number: 2, // [ 4 byte value ]
@@ -35,14 +39,16 @@ function convertStringToHexArray(value: string) {
     return asciiKeys;
 }
 
-export function onEvent(options?: {queryOnDeviceAnnounce?: boolean, timeStart?: '1970' | '2000'}): OnEvent {
+export function onEvent(args?: {
+    queryOnDeviceAnnounce?: boolean, timeStart?: '1970' | '2000', respondToMcuVersionResponse?: boolean, queryIntervalSeconds?: number
+}): OnEvent {
     return async (type, data, device, settings, state) => {
-        options = {queryOnDeviceAnnounce: false, timeStart: '1970', ...options};
+        args = {queryOnDeviceAnnounce: false, timeStart: '1970', respondToMcuVersionResponse: true, ...args};
 
         const endpoint = device.endpoints[0];
 
         if (type === 'message' && data.cluster === 'manuSpecificTuya') {
-            if (data.type === 'commandMcuVersionResponse') {
+            if (args.respondToMcuVersionResponse && data.type === 'commandMcuVersionResponse') {
                 await endpoint.command('manuSpecificTuya', 'mcuVersionRequest', {'seq': 0x0002});
             } else if (data.type === 'commandMcuGatewayConnectionStatus') {
                 // "payload" can have the following values:
@@ -56,7 +62,7 @@ export function onEvent(options?: {queryOnDeviceAnnounce?: boolean, timeStart?: 
 
         if (data.type === 'commandMcuSyncTime' && data.cluster === 'manuSpecificTuya') {
             try {
-                const offset = options.timeStart === '2000' ? constants.OneJanuary2000 : 0;
+                const offset = args.timeStart === '2000' ? constants.OneJanuary2000 : 0;
                 const utcTime = Math.round(((new Date()).getTime() - offset) / 1000);
                 const localTime = utcTime - (new Date()).getTimezoneOffset() * 60;
                 const payload = {
@@ -73,8 +79,26 @@ export function onEvent(options?: {queryOnDeviceAnnounce?: boolean, timeStart?: 
         }
 
         // Some devices require a dataQuery on deviceAnnounce, otherwise they don't report any data
-        if (options.queryOnDeviceAnnounce && type === 'deviceAnnounce') {
+        if (args.queryOnDeviceAnnounce && type === 'deviceAnnounce') {
             await endpoint.command('manuSpecificTuya', 'dataQuery', {});
+        }
+
+        if (args.queryIntervalSeconds) {
+            if (type === 'stop') {
+                clearTimeout(globalStore.getValue(device, 'query_interval'));
+                globalStore.clearValue(device, 'query_interval');
+            } else if (!globalStore.hasValue(device, 'query_interval')) {
+                const setTimer = () => {
+                    const timer = setTimeout(async () => {
+                        try {
+                            await endpoint.command('manuSpecificTuya', 'dataQuery', {});
+                        } catch (error) {/* Do nothing*/}
+                        setTimer();
+                    }, args.queryIntervalSeconds * 1000);
+                    globalStore.putValue(device, 'query_interval', timer);
+                };
+                setTimer();
+            }
         }
     };
 }
@@ -241,7 +265,7 @@ function dpValueFromBitmap(dp: number, bitmapBuffer: number) {
     return {dp, datatype: dataTypes.bitmap, data: [bitmapBuffer]};
 }
 
-async function sendDataPointValue(entity: Zh.Group | Zh.Endpoint, dp: number, value: number, cmd?: string, seq?: number) {
+export async function sendDataPointValue(entity: Zh.Group | Zh.Endpoint, dp: number, value: number, cmd?: string, seq?: number) {
     return await sendDataPoints(entity, [dpValueFromNumberValue(dp, value)], cmd, seq);
 }
 
@@ -253,15 +277,15 @@ export async function sendDataPointEnum(entity: Zh.Group | Zh.Endpoint, dp: numb
     return await sendDataPoints(entity, [dpValueFromEnum(dp, value)], cmd, seq);
 }
 
-async function sendDataPointRaw(entity: Zh.Group | Zh.Endpoint, dp: number, value: number[], cmd?: string, seq?: number) {
+export async function sendDataPointRaw(entity: Zh.Group | Zh.Endpoint, dp: number, value: number[], cmd?: string, seq?: number) {
     return await sendDataPoints(entity, [dpValueFromRaw(dp, value)], cmd, seq);
 }
 
-async function sendDataPointBitmap(entity: Zh.Group | Zh.Endpoint, dp: number, value: number, cmd?: string, seq?: number) {
+export async function sendDataPointBitmap(entity: Zh.Group | Zh.Endpoint, dp: number, value: number, cmd?: string, seq?: number) {
     return await sendDataPoints(entity, [dpValueFromBitmap(dp, value)], cmd, seq);
 }
 
-async function sendDataPointStringBuffer(entity: Zh.Group | Zh.Endpoint, dp: number, value: string, cmd?: string, seq?: number) {
+export async function sendDataPointStringBuffer(entity: Zh.Group | Zh.Endpoint, dp: number, value: string, cmd?: string, seq?: number) {
     return await sendDataPoints(entity, [dpValueFromString(dp, value)], cmd, seq);
 }
 
@@ -341,13 +365,16 @@ export const skip = {
     // Prevent state from being published when already ON and brightness is also published.
     // This prevents 100% -> X% brightness jumps when the switch is already on
     // https://github.com/Koenkk/zigbee2mqtt/issues/13800#issuecomment-1263592783
-    stateOnAndBrightnessPresent: (meta: Tz.Meta) => meta.message.hasOwnProperty('brightness') && meta.state.state === 'ON',
+    stateOnAndBrightnessPresent: (meta: Tz.Meta) => {
+        if (Array.isArray(meta.mapped)) throw new Error('Not supported');
+        const convertedKey = meta.mapped.meta.multiEndpoint && meta.endpoint_name ? `state_${meta.endpoint_name}` : 'state';
+        return meta.message.hasOwnProperty('brightness') && meta.state[convertedKey] === meta.message.state;
+    },
 };
 
 export const configureMagicPacket = async (device: Zh.Device, coordinatorEndpoint: Zh.Endpoint, logger: Logger) => {
     try {
         const endpoint = device.endpoints[0];
-        // @ts-expect-error
         await endpoint.read('genBasic', ['manufacturerName', 'zclVersion', 'appVersion', 'modelId', 'powerSource', 0xfffe]);
     } catch (e) {
         // Fails for some TuYa devices with UNSUPPORTED_ATTRIBUTE, ignore that.
@@ -399,13 +426,19 @@ export class Bitmap extends Base {
     }
 }
 
+type LookupMap = {[s: (string)]: number | boolean | Enum | string};
 export const valueConverterBasic = {
-    lookup: (map: {[s: (string)]: number | boolean | Enum | string}) => {
+    lookup: (map: LookupMap | ((options: KeyValue, device: Zh.Device) => LookupMap),
+        fallbackValue?: number | boolean | KeyValue | string | null) => {
         return {
-            to: (v: string) => utils.getFromLookup(v, map),
-            from: (v: number) => {
-                const value = Object.entries(map).find((i) => i[1].valueOf() === v);
-                if (!value) throw new Error(`Value '${v}' is not allowed, expected one of ${Object.values(map)}`);
+            to: (v: string, meta: Tz.Meta) => utils.getFromLookup(v, map instanceof Function ? map(meta.options, meta.device) : map),
+            from: (v: number, _meta: Fz.Meta, options: KeyValue) => {
+                const m = map instanceof Function ? map(options, _meta.device) : map;
+                const value = Object.entries(m).find((i) => i[1].valueOf() === v);
+                if (!value) {
+                    if (fallbackValue !== undefined) return fallbackValue;
+                    throw new Error(`Value '${v}' is not allowed, expected one of ${Object.values(m)}`);
+                }
                 return value[0];
             },
         };
@@ -422,9 +455,97 @@ export const valueConverterBasic = {
     divideBy: (value: number) => {
         return {to: (v: number) => v * value, from: (v: number) => v / value};
     },
-    trueFalse: (valueTrue: number | Enum) => {
-        return {from: (v: number) => v === valueTrue};
+    divideByFromOnly: (value: number) => {
+        return {to: (v: number) => v, from: (v: number) => v / value};
     },
+    trueFalse: (valueTrue: number | Enum) => {
+        return {from: (v: number) => v === valueTrue.valueOf()};
+    },
+    // color1000: () => {
+    //     return {
+    //         // eslint-disable-next-line
+    //         to: (value: any, meta?: Tz.Meta) => {
+    //             const make4sizedString = (v: string) => {
+    //                 if (v.length >= 4) {
+    //                     return v;
+    //                 } else if (v.length === 3) {
+    //                     return '0' + v;
+    //                 } else if (v.length === 2) {
+    //                     return '00' + v;
+    //                 } else if (v.length === 1) {
+    //                     return '000' + v;
+    //                 } else {
+    //                     return '0000';
+    //                 }
+    //             };
+
+    //             const fillInHSB = (h: number, s: number, b: number, state: KeyValueAny) => {
+    //                 // Define default values. Device expects leading zero in string.
+    //                 const hsb = {
+    //                     h: '0168', // 360
+    //                     s: '03e8', // 1000
+    //                     b: '03e8', // 1000
+    //                 };
+
+    //                 if (h) {
+    //                     // The device expects 0-359
+    //                     if (h >= 360) {
+    //                         h = 359;
+    //                     }
+    //                     hsb.h = make4sizedString(h.toString(16));
+    //                 } else if (state.color && state.color.hue) {
+    //                     hsb.h = make4sizedString(state.color.hue.toString(16));
+    //                 }
+
+    //                 // Device expects 0-1000, saturation normally is 0-100 so we expect that from the user
+    //                 // The device expects a round number, otherwise everything breaks
+    //                 if (s) {
+    //                     hsb.s = make4sizedString(utils.mapNumberRange(s, 0, 100, 0, 1000).toString(16));
+    //                 } else if (state.color && state.color.saturation) {
+    //                     hsb.s = make4sizedString(utils.mapNumberRange(state.color.saturation, 0, 100, 0, 1000).toString(16));
+    //                 }
+
+    //                 // Scale 0-255 to 0-1000 what the device expects.
+    //                 if (b != null) {
+    //                     hsb.b = make4sizedString(utils.mapNumberRange(b, 0, 255, 0, 1000).toString(16));
+    //                 } else if (state.brightness != null) {
+    //                     hsb.b = make4sizedString(utils.mapNumberRange(state.brightness, 0, 255, 0, 1000).toString(16));
+    //                 }
+    //                 return hsb;
+    //             };
+    //             const newColor = Color.fromConverterArg(value);
+    //             let hsv;
+    //             if (newColor.isRGB()) {
+    //                 hsv = newColor.rgb.toHSV();
+    //             } else {
+    //                 if (newColor.isHSV()) {
+    //                     hsv = newColor.hsv;
+    //                 }
+    //             }
+    //             const hsb = fillInHSB(
+    //                 utils.precisionRound(hsv.hue, 0) || null,
+    //                 utils.precisionRound(hsv.saturation, 0) || null,
+    //                 utils.precisionRound(hsv.brightness, 0) || null,
+    //                 meta.state,
+    //             );
+    //             const data: string = hsb.h + hsb.s + hsb.b;
+
+    //             return data;
+    //         },
+    //         // eslint-disable-next-line
+    //         from: (value: any) => {
+    //             const result: KeyValueAny = {};
+    //             const h = parseInt(value.substring(0, 4), 16);
+    //             const s = parseInt(value.substring(4, 8), 16);
+    //             const b = parseInt(value.substring(8, 12), 16);
+    //             result.color_mode = 'hs';
+    //             result.color = {hue: h, saturation: utils.mapNumberRange(s, 0, 1000, 0, 100)};
+    //             result.brightness = utils.mapNumberRange(b, 0, 1000, 0, 255);
+
+    //             return result;
+    //         },
+    //     };
+    // },
 };
 
 export const valueConverter = {
@@ -440,7 +561,8 @@ export const valueConverter = {
     powerOnBehavior: valueConverterBasic.lookup({'off': 0, 'on': 1, 'previous': 2}),
     powerOnBehaviorEnum: valueConverterBasic.lookup({'off': new Enum(0), 'on': new Enum(1), 'previous': new Enum(2)}),
     switchType: valueConverterBasic.lookup({'momentary': new Enum(0), 'toggle': new Enum(1), 'state': new Enum(2)}),
-    backlightMode: valueConverterBasic.lookup({'off': new Enum(0), 'normal': new Enum(1), 'inverted': new Enum(2)}),
+    backlightModeOffNormalInverted: valueConverterBasic.lookup({'off': new Enum(0), 'normal': new Enum(1), 'inverted': new Enum(2)}),
+    backlightModeOffLowMediumHigh: valueConverterBasic.lookup({'off': new Enum(0), 'low': new Enum(1), 'medium': new Enum(2), 'high': new Enum(3)}),
     lightType: valueConverterBasic.lookup({'led': 0, 'incandescent': 1, 'halogen': 2}),
     countdown: valueConverterBasic.raw(),
     scale0_254to0_1000: valueConverterBasic.scale(0, 254, 0, 1000),
@@ -451,9 +573,11 @@ export const valueConverter = {
     batteryState: valueConverterBasic.lookup({'low': 0, 'medium': 1, 'high': 2}),
     divideBy10: valueConverterBasic.divideBy(10),
     divideBy1000: valueConverterBasic.divideBy(1000),
+    divideBy10FromOnly: valueConverterBasic.divideByFromOnly(10),
     switchMode: valueConverterBasic.lookup({'switch': new Enum(0), 'scene': new Enum(1)}),
     lightMode: valueConverterBasic.lookup({'normal': new Enum(0), 'on': new Enum(1), 'off': new Enum(2), 'flash': new Enum(3)}),
     raw: valueConverterBasic.raw(),
+    workingDay: valueConverterBasic.lookup({'disabled': new Enum(0), '6-1': new Enum(1), '5-2': new Enum(2), '7': new Enum(3)}),
     localTemperatureCalibration: {
         from: (value: number) => value > 4000 ? value - 4096 : value,
         to: (value: number) => value < 0 ? 4096 + value : value,
@@ -473,6 +597,15 @@ export const valueConverter = {
             return options.invert_cover ? 100 - v : v;
         },
     },
+    coverPositionInverted: {
+        to: async (v: number, meta: Tz.Meta) => {
+            return meta.options.invert_cover ? v : 100 - v;
+        },
+        from: (v: number, meta: Fz.Meta, options: KeyValue) => {
+            return options.invert_cover ? v : 100 - v;
+        },
+    },
+    tubularMotorDirection: valueConverterBasic.lookup({'normal': new Enum(0), 'reversed': new Enum(1)}),
     plus1: {
         from: (v: number) => v + 1,
         to: (v: number) => v - 1,
@@ -549,6 +682,17 @@ export const valueConverter = {
         from: (v: number) => v,
         to: (v: number) => {
             if (v < 0) return v + 0x100000000;
+            return v;
+        },
+    },
+    localTempCalibration3: {
+        from: (v: number) => {
+            if (v > 0x7FFFFFFF) v -= 0x100000000;
+            return v / 10;
+        },
+        to: (v: number) => {
+            if (v > 0) return v * 10;
+            if (v < 0) return v * 10 + 0x100000000;
             return v;
         },
     },
@@ -715,6 +859,115 @@ export const valueConverter = {
             },
         };
     },
+    tv02Preset: () => {
+        return {
+            from: (v: number) => {
+                if (v === 0) return 'auto';
+                else if (v === 1) return 'manual';
+                else return 'holiday'; // 2 and 3 are holiday
+            },
+            to: (v: string, meta: Tz.Meta) => {
+                if (v === 'auto') return new Enum(0);
+                else if (v === 'manual') return new Enum(1);
+                else if (v === 'holiday') {
+                    // https://github.com/Koenkk/zigbee2mqtt/issues/20486
+                    if (meta.device.manufacturerName === '_TZE200_mudxchsu') return new Enum(2);
+                    else return new Enum(3);
+                } else throw new Error(`Unsupported preset '${v}'`);
+            },
+        };
+    },
+    thermostatSystemModeAndPreset: (toKey: string) => {
+        return {
+            from: (v: string) => {
+                utils.assertNumber(v, 'system_mode');
+                const presetLookup: KeyValueNumberString = {0: 'auto', 1: 'manual', 2: 'off', 3: 'on'};
+                const systemModeLookup: KeyValueNumberString = {0: 'auto', 1: 'auto', 2: 'off', 3: 'heat'};
+                return {preset: presetLookup[v], system_mode: systemModeLookup[v]};
+            },
+            to: (v: string) => {
+                const presetLookup: KeyValueStringEnum = {'auto': new Enum(0), 'manual': new Enum(1), 'off': new Enum(2), 'on': new Enum(3)};
+                const systemModeLookup: KeyValueStringEnum = {'auto': new Enum(1), 'off': new Enum(2), 'heat': new Enum(3)};
+                const lookup: KeyValueStringEnum = toKey === 'preset' ? presetLookup : systemModeLookup;
+                return utils.getFromLookup(v, lookup);
+            },
+        };
+    },
+    ZWT198_schedule: {
+        from: (value: number[], meta: Fz.Meta, options: KeyValue) => {
+            const programmingMode = [];
+
+            for (let i=0; i<8; i++) {
+                const start=i*4;
+
+                const time = value[start].toString().padStart(2, '0')+':'+ value[start+1].toString().padStart(2, '0');
+                const temp = (value[start+2]*256+value[start+3])/10;
+                const tempStr = temp.toFixed(1)+'°C';
+                programmingMode.push(time+'/'+tempStr);
+            }
+            return {
+                schedule_weekday: programmingMode.slice(0, 6).join(' '),
+                schedule_holiday: programmingMode.slice(6, 8).join(' '),
+            };
+        },
+        to: async (v: string, meta: Tz.Meta) => {
+            const dpId = 109;
+            const payload:number[] = [];
+            let weekdayFormat: string;
+            let holidayFormat: string;
+
+            if (meta.message.hasOwnProperty('schedule_weekday')) {
+                weekdayFormat = v;
+                holidayFormat = meta.state['schedule_holiday'] as string;
+            } else {
+                weekdayFormat = meta.state['schedule_weekday'] as string;
+                holidayFormat = v;
+            }
+
+            function scheduleToRaw(key: string, input: string, number: number, payload: number[], meta: Tz.Meta) {
+                const items = input.trim().split(/\s+/);
+
+                if (items.length != number) {
+                    throw new Error('Wrong number of items for '+ key +' :' + items.length);
+                } else {
+                    for (let i = 0; i < number; i++) {
+                        const timeTemperature = items[i].split('/');
+                        if (timeTemperature.length != 2) {
+                            throw new Error('Invalid schedule: wrong transition format: ' + items[i]);
+                        }
+                        const hourMinute = timeTemperature[0].split(':', 2);
+                        const hour = parseInt(hourMinute[0]);
+                        const minute = parseInt(hourMinute[1]);
+                        const temperature = parseFloat(timeTemperature[1]);
+
+                        if (!utils.isNumber(hour) || !utils.isNumber(temperature) || !utils.isNumber(minute) ||
+                            hour < 0 || hour >= 24 ||
+                            minute < 0 || minute >= 60 ||
+                            temperature < 5 || temperature >= 35) {
+                            throw new Error('Invalid hour, minute or temperature (5<t<35) in ' + key + ' of: `' +
+                                items[i]+'`; Format is `hh:m/cc.c` or `hh:mm/cc.c°C`');
+                        }
+                        const temperature10 =Math.round(temperature*10);
+
+                        payload.push(
+                            hour,
+                            minute,
+                            (temperature10 >> 8) & 0xFF,
+                            temperature10 & 0xFF,
+                        );
+                    }
+                }
+                return;
+            }
+
+            scheduleToRaw('schedule_weekday', weekdayFormat, 6, payload, meta);
+            scheduleToRaw('schedule_holiday', holidayFormat, 2, payload, meta);
+
+            const entity = meta.device.endpoints[0];
+            const sendCommand = utils.getMetaValue(entity, meta.mapped, 'tuyaSendCommand', undefined, 'dataRequest');
+            await sendDataPointRaw(entity, dpId, payload, sendCommand, 1);
+        },
+    },
     TV02SystemMode: {
         to: async (v: number, meta: Tz.Meta) => {
             const entity = meta.device.endpoints[0];
@@ -770,8 +1023,10 @@ const tuyaTz = {
             await entity.write('genOnOff', {moesStartUpOnOff});
             return {state: {[key]: value}};
         },
-        convertGet: async (entity, key, meta) => await entity.read('genOnOff', ['moesStartUpOnOff']),
-    } as Tz.Converter,
+        convertGet: async (entity, key, meta) => {
+            await entity.read('genOnOff', ['moesStartUpOnOff']);
+        },
+    } satisfies Tz.Converter,
     power_on_behavior_2: {
         key: ['power_on_behavior'],
         convertSet: async (entity, key, value, meta) => {
@@ -779,8 +1034,10 @@ const tuyaTz = {
             await entity.write('manuSpecificTuya_3', {powerOnBehavior});
             return {state: {[key]: value}};
         },
-        convertGet: async (entity, key, meta) => await entity.read('manuSpecificTuya_3', ['powerOnBehavior']),
-    } as Tz.Converter,
+        convertGet: async (entity, key, meta) => {
+            await entity.read('manuSpecificTuya_3', ['powerOnBehavior']);
+        },
+    } satisfies Tz.Converter,
     switch_type: {
         key: ['switch_type'],
         convertSet: async (entity, key, value, meta) => {
@@ -788,8 +1045,10 @@ const tuyaTz = {
             await entity.write('manuSpecificTuya_3', {switchType}, {disableDefaultResponse: true});
             return {state: {[key]: value}};
         },
-        convertGet: async (entity, key, meta) => await entity.read('manuSpecificTuya_3', ['switchType']),
-    } as Tz.Converter,
+        convertGet: async (entity, key, meta) => {
+            await entity.read('manuSpecificTuya_3', ['switchType']);
+        },
+    } satisfies Tz.Converter,
     backlight_indicator_mode_1: {
         key: ['backlight_mode', 'indicator_mode'],
         convertSet: async (entity, key, value, meta) => {
@@ -799,8 +1058,10 @@ const tuyaTz = {
             await entity.write('genOnOff', {tuyaBacklightMode});
             return {state: {[key]: value}};
         },
-        convertGet: async (entity, key, meta) => await entity.read('genOnOff', ['tuyaBacklightMode']),
-    } as Tz.Converter,
+        convertGet: async (entity, key, meta) => {
+            await entity.read('genOnOff', ['tuyaBacklightMode']);
+        },
+    } satisfies Tz.Converter,
     backlight_indicator_mode_2: {
         key: ['backlight_mode'],
         convertSet: async (entity, key, value, meta) => {
@@ -808,15 +1069,17 @@ const tuyaTz = {
             await entity.write('genOnOff', {tuyaBacklightSwitch});
             return {state: {[key]: value}};
         },
-        convertGet: async (entity, key, meta) => await entity.read('genOnOff', ['tuyaBacklightSwitch']),
-    } as Tz.Converter,
+        convertGet: async (entity, key, meta) => {
+            await entity.read('genOnOff', ['tuyaBacklightSwitch']);
+        },
+    } satisfies Tz.Converter,
     child_lock: {
         key: ['child_lock'],
         convertSet: async (entity, key, value, meta) => {
             const v = utils.getFromLookup(value, {'lock': true, 'unlock': false});
             await entity.write('genOnOff', {0x8000: {value: v, type: 0x10}});
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     min_brightness: {
         key: ['min_brightness'],
         convertSet: async (entity, key, value, meta) => {
@@ -831,7 +1094,7 @@ const tuyaTz = {
         convertGet: async (entity, key, meta) => {
             await entity.read('genLevelCtrl', [0xfc00]);
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     color_power_on_behavior: {
         key: ['color_power_on_behavior'],
         convertSet: async (entity, key, value, meta) => {
@@ -839,7 +1102,7 @@ const tuyaTz = {
             await entity.command('lightingColorCtrl', 'tuyaOnStartUp', {mode: v*256, data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]});
             return {state: {color_power_on_behavior: value}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     datapoints: {
         key: [
             'temperature_unit', 'temperature_calibration', 'humidity_calibration', 'alarm_switch', 'tamper_alarm_switch',
@@ -852,29 +1115,34 @@ const tuyaTz = {
             'scale_protection', 'error', 'radar_scene', 'radar_sensitivity', 'tumble_alarm_time', 'tumble_switch', 'fall_sensitivity',
             'min_temperature', 'max_temperature', 'window_detection', 'boost_heating', 'alarm_ringtone', 'alarm_time', 'fan_speed',
             'reverse_direction', 'border', 'click_control', 'motor_direction', 'opening_mode', 'factory_reset', 'set_upper_limit', 'set_bottom_limit',
-            'motor_speed', 'timer', 'reset_frost_lock', 'schedule_periodic', 'schedule_weekday', 'backlight_mode', 'calibration', 'motor_steering',
-            'mode', 'lower', 'upper', 'delay', 'reverse', 'touch', 'program', 'light_mode', 'switch_mode',
+            'motor_speed', 'timer', 'reset_frost_lock', 'schedule_periodic', 'schedule_weekday', 'schedule_holiday', 'backlight_mode', 'calibration',
+            'motor_steering', 'mode', 'lower', 'upper', 'delay', 'reverse', 'touch', 'program', 'light_mode', 'switch_mode',
             ...[1, 2, 3, 4, 5, 6].map((no) => `schedule_slot_${no}`), 'minimum_range', 'maximum_range', 'detection_delay', 'fading_time',
-            'radar_sensitivity', 'entry_sensitivity', 'illumin_threshold', 'detection_range', 'shield_range', 'entry_distance_indentation',
+            'radar_sensitivity', 'entry_sensitivity', 'illuminance_threshold', 'detection_range', 'shield_range', 'entry_distance_indentation',
             'entry_filter_time', 'departure_delay', 'block_time', 'status_indication', 'breaker_mode', 'breaker_status',
             'alarm', 'alarm_time', 'alarm_volume', 'type', 'volume', 'ringtone', 'duration', 'medium_motion_detection_distance',
             'large_motion_detection_distance', 'large_motion_detection_sensitivity', 'small_motion_detection_distance',
             'small_motion_detection_sensitivity', 'static_detection_distance', 'static_detection_sensitivity', 'keep_time', 'indicator',
             'motion_sensitivity', 'detection_distance_max', 'detection_distance_min', 'presence_sensitivity', 'sensitivity', 'illuminance_interval',
             'medium_motion_detection_sensitivity', 'small_detection_distance', 'small_detection_sensitivity', 'fan_mode', 'deadzone_temperature',
-            'eco_mode', 'max_temperature_limit', 'min_temperature_limits', 'manual_modes',
+            'eco_mode', 'max_temperature_limit', 'min_temperature_limit', 'manual_mode',
             'medium_motion_detection_sensitivity', 'small_detection_distance', 'small_detection_sensitivity', 'switch_type',
             'ph_max', 'ph_min', 'ec_max', 'ec_min', 'orp_max', 'orp_min', 'free_chlorine_max', 'free_chlorine_min', 'target_distance',
             'illuminance_treshold_max', 'illuminance_treshold_min', 'presence_illuminance_switch', 'light_switch', 'light_linkage',
-            'indicator_light', 'find_switch', 'detection_method',
+            'indicator_light', 'find_switch', 'detection_method', 'sensor', 'hysteresis', 'max_temperature_protection', 'display_brightness',
+            'screen_orientation', 'regulator_period', 'regulator_set_point', 'upper_stroke_limit', 'middle_stroke_limit', 'lower_stroke_limit',
+            'buzzer_feedback', 'rf_pairing', 'max_temperature_alarm', 'min_temperature_alarm', 'max_humidity_alarm', 'min_humidity_alarm',
+            'temperature_periodic_report', 'humidity_periodic_report', 'temperature_sensitivity', 'humidity_sensitivity', 'temperature_alarm',
+            'humidity_alarm', 'move_sensitivity', 'radar_range', 'presence_timeout',
         ],
         convertSet: async (entity, key, value, meta) => {
             // A set converter is only called once; therefore we need to loop
             const state: KeyValue = {};
+            if (Array.isArray(meta.mapped)) throw new Error(`Not supported for groups`);
             const datapoints = meta.mapped.meta?.tuyaDatapoints;
             if (!datapoints) throw new Error('No datapoints map defined');
             for (const [attr, value] of Object.entries(meta.message)) {
-                const convertedKey = meta.mapped.meta.multiEndpoint && meta.endpoint_name && !attr.startsWith(`${key}_`) ?
+                const convertedKey: string = meta.mapped.meta.multiEndpoint && meta.endpoint_name && !attr.startsWith(`${key}_`) ?
                     `${attr}_${meta.endpoint_name}` : attr;
                 const dpEntry = datapoints.find((d) => d[1] === convertedKey);
                 if (!dpEntry?.[1] || !dpEntry?.[2].to) {
@@ -908,18 +1176,28 @@ const tuyaTz = {
             }
             return {state};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
     do_not_disturb: {
         key: ['do_not_disturb'],
         convertSet: async (entity, key, value, meta) => {
             await entity.command('lightingColorCtrl', 'tuyaDoNotDisturb', {enable: value ? 1 : 0});
             return {state: {do_not_disturb: value}};
         },
-    } as Tz.Converter,
+    } satisfies Tz.Converter,
 };
 export {tuyaTz as tz};
 
 const tuyaFz = {
+    brightness: {
+        cluster: 'genLevelCtrl',
+        type: ['attributeReport', 'readResponse'],
+        convert: (model, msg, publish, options, meta) => {
+            if (msg.data.hasOwnProperty('61440')) {
+                const property = utils.postfixWithEndpointName('brightness', msg, model, meta);
+                return {[property]: msg.data['61440']};
+            }
+        },
+    } satisfies Fz.Converter,
     gateway_connection_status: {
         cluster: 'manuSpecificTuya',
         type: ['commandMcuGatewayConnectionStatus'],
@@ -931,7 +1209,7 @@ const tuyaFz = {
             const payload = {payloadSize: 1, payload: 1};
             await msg.endpoint.command('manuSpecificTuya', 'mcuGatewayConnectionStatus', payload, {});
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     power_on_behavior_1: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -942,7 +1220,7 @@ const tuyaFz = {
                 return {[property]: lookup[msg.data['moesStartUpOnOff']]};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     power_on_behavior_2: {
         cluster: 'manuSpecificTuya_3',
         type: ['attributeReport', 'readResponse'],
@@ -954,7 +1232,7 @@ const tuyaFz = {
                 return {[property]: lookup[msg.data[attribute]]};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     power_outage_memory: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -965,7 +1243,7 @@ const tuyaFz = {
                 return {[property]: lookup[msg.data['moesStartUpOnOff']]};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     switch_type: {
         cluster: 'manuSpecificTuya_3',
         type: ['attributeReport', 'readResponse'],
@@ -975,7 +1253,7 @@ const tuyaFz = {
                 return {switch_type: lookup[msg.data['switchType']]};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     backlight_mode_low_medium_high: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -986,7 +1264,7 @@ const tuyaFz = {
                 return {backlight_mode: backlightLookup[value]};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     backlight_mode_off_normal_inverted: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -995,7 +1273,7 @@ const tuyaFz = {
                 return {backlight_mode: utils.getFromLookup(msg.data['tuyaBacklightMode'], {0: 'off', 1: 'normal', 2: 'inverted'})};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     backlight_mode_off_on: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -1004,7 +1282,7 @@ const tuyaFz = {
                 return {backlight_mode: utils.getFromLookup(msg.data['tuyaBacklightSwitch'], {0: 'OFF', 1: 'ON'})};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     indicator_mode: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -1013,7 +1291,7 @@ const tuyaFz = {
                 return {indicator_mode: utils.getFromLookup(msg.data['tuyaBacklightMode'], {0: 'off', 1: 'off/on', 2: 'on/off', 3: 'on'})};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     child_lock: {
         cluster: 'genOnOff',
         type: ['attributeReport', 'readResponse'],
@@ -1023,7 +1301,7 @@ const tuyaFz = {
                 return {child_lock: value ? 'LOCK' : 'UNLOCK'};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     min_brightness: {
         cluster: 'genLevelCtrl',
         type: ['attributeReport', 'readResponse'],
@@ -1034,21 +1312,10 @@ const tuyaFz = {
                 return {[property]: value};
             }
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
     datapoints: {
         cluster: 'manuSpecificTuya',
         type: ['commandDataResponse', 'commandDataReport', 'commandActiveStatusReport', 'commandActiveStatusReportAlt'],
-        options: (definition) => {
-            const result = [];
-            for (const datapoint of definition.meta.tuyaDatapoints) {
-                const dpKey = datapoint[1];
-                if (dpKey in utils.calibrateAndPrecisionRoundOptionsDefaultPrecision) {
-                    const type = utils.calibrateAndPrecisionRoundOptionsIsPercentual(dpKey) ? 'percentual' : 'absolute';
-                    result.push(exposes.options.precision(dpKey), exposes.options.calibration(dpKey, type));
-                }
-            }
-            return result;
-        },
         convert: (model, msg, publish, options, meta) => {
             const result: KeyValue = {};
             if (!model.meta || !model.meta.tuyaDatapoints) throw new Error('No datapoints map defined');
@@ -1068,18 +1335,9 @@ const tuyaFz = {
                         `with value ${value}`);
                 }
             }
-
-            // Apply calibrateAndPrecisionRoundOptions
-            const keys = Object.keys(utils.calibrateAndPrecisionRoundOptionsDefaultPrecision);
-            for (const entry of Object.entries(result)) {
-                if (keys.includes(entry[0])) {
-                    const number = utils.toNumber(entry[1], entry[0]);
-                    result[entry[0]] = utils.calibrateAndPrecisionRoundOptions(number, options, entry[0]);
-                }
-            }
             return result;
         },
-    } as Fz.Converter,
+    } satisfies Fz.Converter,
 };
 export {tuyaFz as fz};
 
@@ -1118,6 +1376,11 @@ const tuyaExtend = {
             exposes.push(tuyaExposes.switchType());
         }
 
+        if (options.backlightModeOffOn) {
+            fromZigbee.push(tuyaFz.backlight_mode_off_on);
+            exposes.push(tuyaExposes.backlightModeOffOn());
+            toZigbee.push(tuyaTz.backlight_indicator_mode_2);
+        }
         if (options.backlightModeLowMediumHigh) {
             fromZigbee.push(tuyaFz.backlight_mode_low_medium_high);
             exposes.push(tuyaExposes.backlightModeLowMediumHigh());
@@ -1132,11 +1395,6 @@ const tuyaExtend = {
             fromZigbee.push(tuyaFz.indicator_mode);
             exposes.push(tuyaExposes.indicatorMode());
             toZigbee.push(tuyaTz.backlight_indicator_mode_1);
-        }
-        if (options.backlightModeOffOn) {
-            fromZigbee.push(tuyaFz.backlight_mode_off_on);
-            exposes.push(tuyaExposes.backlightModeOffOn());
-            toZigbee.push(tuyaTz.backlight_indicator_mode_2);
         }
 
         if (options.electricalMeasurements) {
@@ -1176,32 +1434,303 @@ const tuyaExtend = {
         const meta = {applyRedFix: true, supportsEnhancedHue: false};
         return {...extend.light_onoff_brightness_color(options), meta};
     },
-    light_onoff_brightness: (options:{
-        endpoints?: string[], disablePowerOnBehavior?: boolean, minBrightness?: boolean,
-        toZigbee?:Tz.Converter[], exposes?: Expose[], noConfigure?: boolean, disableMoveStep?: boolean,
-        disableTransition?: boolean,
-    }={}) => {
-        options = {
-            disablePowerOnBehavior: true, toZigbee: [tuyaTz.do_not_disturb], exposes: [tuyaExposes.doNotDisturb()],
-            minBrightness: false, ...options,
-        };
-        const result = extend.light_onoff_brightness(options);
-        const exposes_ = options.endpoints ? options.endpoints.map((ee) => e.light_brightness()) : [e.light_brightness()];
-        if (options.minBrightness) {
-            result.fromZigbee.push(tuyaFz.min_brightness);
-            result.toZigbee.push(tuyaTz.min_brightness);
-            result.exposes = exposes_.map((e) => e.withMinBrightness());
-        }
-        if (options.endpoints) {
-            result.exposes = result.exposes.map((e, i) => e.withEndpoint(options.endpoints[i]));
-        }
-        return result;
-    },
 };
 export {tuyaExtend as extend};
 
+
+function getHandlersForDP(name: string, dp: number, type: number, converter: Tuya.ValueConverterSingle,
+    readOnly?: boolean, skip?: (meta: Tz.Meta) => boolean, endpoint?: string, useGlobalSequence?: boolean): [Fz.Converter[], Tz.Converter[]] {
+    const keyName = (endpoint) ? `${name}_${endpoint}` : name;
+    const fromZigbee: Fz.Converter[] = [{
+        cluster: 'manuSpecificTuya',
+        type: ['commandDataResponse', 'commandDataReport', 'commandActiveStatusReport', 'commandActiveStatusReportAlt'],
+        convert: (model, msg, publish, options, meta) => {
+            const dpValue = msg.data.dpValues.find((d: Tuya.DpValue) => d.dp === dp);
+            if (dpValue) {
+                return {[keyName]: converter.from(getDataValue(dpValue))};
+            }
+        },
+    }];
+
+    const toZigbee: Tz.Converter[] = (readOnly) ? undefined : [{
+        key: [name],
+        endpoint: endpoint,
+        convertSet: async (entity, key, value, meta) => {
+            // A set converter is only called once; therefore we need to loop
+            const state: KeyValue = {};
+            if (Array.isArray(meta.mapped)) throw new Error(`Not supported for groups`);
+            for (const [attr, value] of Object.entries(meta.message)) {
+                const convertedKey: string = meta.mapped.meta && meta.mapped.meta.multiEndpoint && meta.endpoint_name && !attr.startsWith(`${key}_`) ?
+                    `${attr}_${meta.endpoint_name}` : attr;
+                // meta.logger.debug(`key: ${key}, convertedKey: ${convertedKey}, keyName: ${keyName}`);
+                if (convertedKey !== keyName) continue;
+                if (skip && skip(meta)) continue;
+
+                const convertedValue = await converter.to(value, meta);
+                const sendCommand = utils.getMetaValue(entity, meta.mapped, 'tuyaSendCommand', undefined, 'dataRequest');
+                const seq = (useGlobalSequence) ? undefined : 1;
+                // meta.logger.debug(`dp: ${dp}, value: ${value}, convertedValue: ${convertedValue}`);
+
+                if (convertedValue === undefined) {
+                    // conversion done inside converter, ignore.
+                } else if (type == dataTypes.bool) {
+                    await sendDataPointBool(entity, dp, convertedValue as boolean, sendCommand, seq);
+                } else if (type == dataTypes.number) {
+                    await sendDataPointValue(entity, dp, convertedValue as number, sendCommand, seq);
+                } else if (type == dataTypes.string) {
+                    await sendDataPointStringBuffer(entity, dp, convertedValue as string, sendCommand, seq);
+                } else if (type == dataTypes.raw) {
+                    await sendDataPointRaw(entity, dp, convertedValue as number[], sendCommand, seq);
+                } else if (type == dataTypes.enum) {
+                    await sendDataPointEnum(entity, dp, convertedValue as number, sendCommand, seq);
+                } else if (type == dataTypes.bitmap) {
+                    await sendDataPointBitmap(entity, dp, convertedValue as number, sendCommand, seq);
+                } else {
+                    throw new Error(`Don't know how to send type '${typeof convertedValue}'`);
+                }
+
+                state[convertedKey] = value;
+            }
+            return {state};
+        },
+    }];
+
+    return [fromZigbee, toZigbee];
+}
+
+export interface TuyaDPEnumLookupArgs {
+    name: string, dp: number, type: number, lookup: KeyValue,
+    description?: string, readOnly?: boolean, endpoint?: string, skip?: (meta: Tz.Meta) => boolean,
+    expose?: Expose,
+}
+export interface TuyaDPBinaryArgs {
+    name: string, dp: number, type: number, valueOn: [string | boolean, unknown], valueOff: [string | boolean, unknown],
+    description?: string, readOnly?: boolean, endpoint?: string, skip?: (meta: Tz.Meta) => boolean,
+    expose?: Expose,
+}
+
+export interface TuyaDPNumericArgs {
+    name: string, dp: number, type: number,
+    description?: string, readOnly?: boolean, endpoint?: string, unit?: string, skip?: (meta: Tz.Meta) => boolean,
+    valueMin?: number, valueMax?: number, valueStep?: number, scale?: number | [number, number, number, number],
+    expose?: exposes.Numeric,
+}
+
+export interface TuyaDPLightArgs {
+    state: {dp: number, type: number, valueOn: [string | boolean, unknown], valueOff: [string | boolean, unknown], skip?: (meta: Tz.Meta) => boolean},
+    brightness: {dp: number, type: number, scale?: number | [number, number, number, number]},
+    max?: {dp: number, type: number, scale?: number | [number, number, number, number]},
+    min?: {dp: number, type: number, scale?: number | [number, number, number, number]},
+    colorTemp?: {dp: number, type: number, range: Range, scale?: number | [number, number, number, number]},
+    // color?: {dp: number, type: number, scale?: number | [number, number, number, number]},
+    endpoint?: string,
+}
+
+const tuyaModernExtend = {
+    dpEnumLookup(args: Partial<TuyaDPEnumLookupArgs>): ModernExtend {
+        const {name, dp, type, lookup, description, readOnly, endpoint, expose, skip} = args;
+        let exp: Expose;
+        if (expose) {
+            exp = expose;
+        } else {
+            exp = new exposes.Enum(name, readOnly ? ea.STATE : ea.STATE_SET, Object.keys(lookup)).withDescription(description);
+        }
+        if (endpoint) exp = exp.withEndpoint(endpoint);
+
+        const handlers: [Fz.Converter[], Tz.Converter[]] = getHandlersForDP(name, dp, type, {
+            from: (value) => utils.getFromLookupByValue(value, lookup),
+            to: (value) => utils.getFromLookup(value, lookup),
+        }, readOnly, skip, endpoint);
+
+        return {exposes: [exp], fromZigbee: handlers[0], toZigbee: handlers[1], isModernExtend: true};
+    },
+    dpBinary(args: Partial<TuyaDPBinaryArgs>): ModernExtend {
+        const {name, dp, type, valueOn, valueOff, description, readOnly, endpoint, expose, skip} = args;
+        let exp: Expose;
+        if (expose) {
+            exp = expose;
+        } else {
+            exp = e.binary(name, readOnly ? ea.STATE : ea.STATE_SET, valueOn[0], valueOff[0]).withDescription(description);
+        }
+        if (endpoint) exp = exp.withEndpoint(endpoint);
+
+        const handlers: [Fz.Converter[], Tz.Converter[]] = getHandlersForDP(name, dp, type, {
+            from: (value) => (value === valueOn[1]) ? valueOn[0] : valueOff[0],
+            to: (value) => (value === valueOn[0]) ? valueOn[1] : valueOff[1],
+        }, readOnly, skip, endpoint);
+
+        return {exposes: [exp], fromZigbee: handlers[0], toZigbee: handlers[1], isModernExtend: true};
+    },
+    dpNumeric(args: Partial<TuyaDPNumericArgs>): ModernExtend {
+        const {name, dp, type, description, readOnly, endpoint, unit, valueMax, valueMin, valueStep, scale, expose, skip} = args;
+        let exp: exposes.Numeric;
+        if (expose) {
+            exp = expose;
+        } else {
+            exp = e.numeric(name, readOnly ? ea.STATE : ea.STATE_SET).withDescription(description);
+        }
+        if (endpoint) exp = exp.withEndpoint(endpoint);
+        if (unit) exp = exp.withUnit(unit);
+        if (valueMin !== undefined) exp = exp.withValueMin(valueMin);
+        if (valueMax !== undefined) exp = exp.withValueMax(valueMax);
+        if (valueStep !== undefined) exp = exp.withValueStep(valueStep);
+
+        let converter;
+        if (scale === undefined) {
+            converter = valueConverterBasic.raw();
+        } else {
+            if (Array.isArray(scale)) {
+                converter = valueConverterBasic.scale(scale[0], scale[1], scale[2], scale[3]);
+            } else {
+                converter = valueConverterBasic.divideBy(scale);
+            }
+        }
+
+        const handlers: [Fz.Converter[], Tz.Converter[]] = getHandlersForDP(name, dp, type, converter, readOnly, skip, endpoint);
+
+        return {exposes: [exp], fromZigbee: handlers[0], toZigbee: handlers[1], isModernExtend: true};
+    },
+    dpLight(args: TuyaDPLightArgs): ModernExtend {
+        const {state, brightness, min, max, colorTemp, endpoint} = args;
+        let exp = e.light_brightness().setAccess('state', ea.STATE_SET).setAccess('brightness', ea.STATE_SET);
+        let fromZigbee: Fz.Converter[] = [];
+        let toZigbee: Tz.Converter[] = [];
+        let ext: ModernExtend;
+        if (min) {
+            exp = exp.withMinBrightness().setAccess('min_brightness', ea.STATE_SET);
+        }
+        if (max) {
+            exp = exp.withMaxBrightness().setAccess('max_brightness', ea.STATE_SET);
+        }
+        if (colorTemp) {
+            exp = exp.withColorTemp(colorTemp.range).setAccess('color_temp', ea.STATE_SET);
+        }
+        // if (color) {
+        //     exp = exp.withColor(['hs']).setAccess('color_hs', ea.STATE_SET);
+        // }
+        if (endpoint) exp = exp.withEndpoint(endpoint);
+        ext = tuyaModernExtend.dpBinary({name: 'state', dp: state.dp, type: state.type,
+            valueOn: state.valueOn, valueOff: state.valueOff, skip: state.skip, endpoint: endpoint});
+        fromZigbee = [...fromZigbee, ...ext.fromZigbee];
+        toZigbee = [...toZigbee, ...ext.toZigbee];
+        ext = tuyaModernExtend.dpNumeric({name: 'brightness', dp: brightness.dp, type: brightness.type,
+            scale: brightness.scale, endpoint: endpoint});
+        fromZigbee = [...fromZigbee, ...ext.fromZigbee];
+        toZigbee = [...toZigbee, ...ext.toZigbee];
+        if (min) {
+            ext = tuyaModernExtend.dpNumeric({name: 'min_brightness', dp: min.dp, type: min.type,
+                scale: min.scale, endpoint: endpoint});
+            fromZigbee = [...fromZigbee, ...ext.fromZigbee];
+            toZigbee = [...toZigbee, ...ext.toZigbee];
+        }
+        if (max) {
+            ext = tuyaModernExtend.dpNumeric({name: 'max_brightness', dp: max.dp, type: max.type,
+                scale: max.scale, endpoint: endpoint});
+            fromZigbee = [...fromZigbee, ...ext.fromZigbee];
+            toZigbee = [...toZigbee, ...ext.toZigbee];
+        }
+        if (colorTemp) {
+            ext = tuyaModernExtend.dpNumeric({name: 'color_temp', dp: colorTemp.dp, type: colorTemp.type,
+                scale: colorTemp.scale, endpoint: endpoint});
+            fromZigbee = [...fromZigbee, ...ext.fromZigbee];
+            toZigbee = [...toZigbee, ...ext.toZigbee];
+        }
+        // if (color) {
+        //     const handlers = getHandlersForDP('color', color.dp, color.type,
+        //         valueConverterBasic.color1000(), undefined, undefined, endpoint);
+
+        //     fromZigbee = [...fromZigbee, ...handlers[0]];
+        //     toZigbee = [...toZigbee, ...handlers[1]];
+        // }
+
+        // combine extends for one expose
+        return {exposes: [exp], fromZigbee, toZigbee, isModernExtend: true};
+    },
+    dpTemperature(args?: Partial<TuyaDPNumericArgs>): ModernExtend {
+        return tuyaModernExtend.dpNumeric({name: 'temperature', type: dataTypes.number, readOnly: true, expose: e.temperature(), ...args});
+    },
+    dpHumidity(args?: Partial<TuyaDPNumericArgs>): ModernExtend {
+        return tuyaModernExtend.dpNumeric({name: 'humidity', type: dataTypes.number, readOnly: true, expose: e.humidity(), ...args});
+    },
+    dpBattery(args?: Partial<TuyaDPNumericArgs>): ModernExtend {
+        return tuyaModernExtend.dpNumeric({name: 'battery', type: dataTypes.number, readOnly: true, expose: e.battery(), ...args});
+    },
+    dpBatteryState(args?: Partial<TuyaDPEnumLookupArgs>): ModernExtend {
+        return tuyaModernExtend.dpEnumLookup({name: 'battery_state', type: dataTypes.number, lookup: {'low': 0, 'medium': 1, 'high': 2},
+            readOnly: true, expose: tuyaExposes.batteryState(), ...args});
+    },
+    dpTemperatureUnit(args?: Partial<TuyaDPEnumLookupArgs>): ModernExtend {
+        return tuyaModernExtend.dpEnumLookup({name: 'temperature_unit', type: dataTypes.enum, lookup: {'celsius': 0, 'fahrenheit': 1},
+            readOnly: true, expose: tuyaExposes.temperatureUnit(), ...args});
+    },
+    dpContact(args?: Partial<TuyaDPBinaryArgs>, invert?: boolean): ModernExtend {
+        return tuyaModernExtend.dpBinary({name: 'contact', type: dataTypes.bool,
+            valueOn: (invert) ? [true, true] : [true, false], valueOff: (invert) ? [false, false] : [false, true],
+            readOnly: true, expose: e.contact(), ...args});
+    },
+    dpAction(args?: Partial<TuyaDPEnumLookupArgs>): ModernExtend {
+        const {lookup} = args;
+        return tuyaModernExtend.dpEnumLookup({name: 'action', type: dataTypes.number, readOnly: true,
+            expose: e.action(Object.keys(lookup)), ...args});
+    },
+    dpIlluminance(args?: Partial<TuyaDPNumericArgs>): ModernExtend {
+        return tuyaModernExtend.dpNumeric({name: 'illuminance', type: dataTypes.number, readOnly: true,
+            expose: e.illuminance(), ...args});
+    },
+    dpGas(args?: Partial<TuyaDPBinaryArgs>, invert?: boolean): ModernExtend {
+        return tuyaModernExtend.dpBinary({name: 'gas', type: dataTypes.enum,
+            valueOn: (invert) ? [true, 1] : [true, 0], valueOff: (invert) ? [false, 0] : [false, 1],
+            readOnly: true, expose: e.gas(), ...args});
+    },
+    dpOnOff(args?: Partial<TuyaDPBinaryArgs>): ModernExtend {
+        const {readOnly} = args;
+        return tuyaModernExtend.dpBinary({name: 'state', type: dataTypes.bool,
+            valueOn: ['ON', true], valueOff: ['OFF', false], expose: e.switch().setAccess('state', readOnly ? ea.STATE : ea.STATE_SET), ...args});
+    },
+    dpPowerOnBehavior(args?: Partial<TuyaDPEnumLookupArgs>): ModernExtend {
+        let {readOnly, lookup} = args;
+        lookup = lookup || {'off': 0, 'on': 1, 'previous': 2};
+        return tuyaModernExtend.dpEnumLookup({name: 'power_on_behavior', lookup: lookup, type: dataTypes.enum,
+            expose: e.power_on_behavior(Object.keys(lookup)).withAccess(readOnly ? ea.STATE : ea.STATE_SET), ...args});
+    },
+    tuyaLight: (args?: modernExtend.LightArgs & {minBrightness?: boolean, switchType?: boolean}) => {
+        args = {minBrightness: false, powerOnBehavior: false, switchType: false, ...args};
+        const result = modernExtend.light({...args, powerOnBehavior: false});
+
+        result.fromZigbee.push(tuyaFz.brightness);
+        result.toZigbee.push(tuyaTz.do_not_disturb);
+        result.exposes.push(tuyaExposes.doNotDisturb());
+
+        if (args.powerOnBehavior) {
+            result.fromZigbee.push(tuyaFz.power_on_behavior_2);
+            result.toZigbee.push(tuyaTz.power_on_behavior_2);
+            if (args.endpoints) {
+                result.exposes.push(...Object.keys(args.endpoints).map((ee) => e.power_on_behavior().withEndpoint(ee)));
+            } else {
+                result.exposes.push(e.power_on_behavior());
+            }
+        }
+
+        if (args.switchType) {
+            result.fromZigbee.push(tuyaFz.switch_type);
+            result.toZigbee.push(tuyaTz.switch_type);
+            result.exposes.push(tuyaExposes.switchType());
+        }
+
+        if (args.minBrightness) {
+            result.fromZigbee.push(tuyaFz.min_brightness);
+            result.toZigbee.push(tuyaTz.min_brightness);
+            result.exposes = result.exposes.map((e) => utils.isLightExpose(e) ? e.withMinBrightness() : e);
+        }
+
+        return result;
+    },
+};
+export {tuyaModernExtend as modernExtend};
+
 exports.exposes = tuyaExposes;
 exports.extend = tuyaExtend;
+exports.modernExtend = tuyaModernExtend;
 exports.tz = tuyaTz;
 exports.fz = tuyaFz;
 exports.enum = (value: number) => new Enum(value);
@@ -1217,3 +1746,4 @@ exports.skip = skip;
 exports.configureMagicPacket = configureMagicPacket;
 exports.fingerprint = fingerprint;
 exports.whitelabel = whitelabel;
+exports.dataTypes = dataTypes;
