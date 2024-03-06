@@ -1,4 +1,4 @@
-import dataType from 'zigbee-herdsman/dist/zcl/definition/dataType';
+import dataType from '@willieee802/zigbee-herdsman/dist/zcl/definition/dataType';
 import {Definition} from '../lib/types';
 import * as exposes from '../lib/exposes';
 import * as reporting from '../lib/reporting';
