@@ -544,9 +544,7 @@ const tzLocal = {
       // @ts-expect-error
       if ((value >= 5 && value <= 36) || value == "off") {
         // @ts-expect-error
-        await entity.write("manuSpecificSinope", {
-          ambiantMaxHeatSetpointLimit: value == "off" ? -32768 : value * 100,
-        });
+        await entity.write("manuSpecificSinope", {ambiantMaxHeatSetpointLimit: value == "off" ? -32768 : value * 100,});
         return {
           readAfterWriteTime: 250,
           state: { ambiant_max_heat_setpoint: value },
@@ -564,9 +562,7 @@ const tzLocal = {
       // @ts-expect-error
       if ((value >= 5 && value <= 34) || value == "off") {
         // @ts-expect-error
-        await entity.write("manuSpecificSinope", {
-          floorMinHeatSetpointLimit: value == "off" ? -32768 : value * 100,
-        });
+        await entity.write("manuSpecificSinope", {floorMinHeatSetpointLimit: value == "off" ? -32768 : value * 100,});
         return {
           readAfterWriteTime: 250,
           state: { floor_min_heat_setpoint: value },
@@ -584,9 +580,7 @@ const tzLocal = {
       // @ts-expect-error
       if ((value >= 7 && value <= 36) || value == "off") {
         // @ts-expect-error
-        await entity.write("manuSpecificSinope", {
-          floorMaxHeatSetpointLimit: value == "off" ? -32768 : value * 100,
-        });
+        await entity.write("manuSpecificSinope", {floorMaxHeatSetpointLimit: value == "off" ? -32768 : value * 100,});
         return {
           readAfterWriteTime: 250,
           state: { floor_max_heat_setpoint: value },

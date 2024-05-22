@@ -89,10 +89,7 @@ const kmpcilConverters = {
           model.meta.battery.voltageToPercentage
         ) {
           // @ts-expect-error
-          payload.battery = utils.batteryVoltageToPercentage(
-            payload.voltage,
-            model.meta.battery.voltageToPercentage
-          );
+          payload.battery = utils.batteryVoltageToPercentage(payload.voltage, model.meta.battery.voltageToPercentage);
         }
       }
       return payload;

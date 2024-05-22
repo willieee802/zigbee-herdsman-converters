@@ -113,17 +113,9 @@ const converterRequiredFields = {
 function validateDefinition(definition: Definition) {
   for (const [field, expectedType] of Object.entries(converterRequiredFields)) {
     // @ts-expect-error
-    assert.notStrictEqual(
-      null,
-      definition[field],
-      `Converter field ${field} is null`
-    );
+    assert.notStrictEqual(null,definition[field],`Converter field ${field} is null`);
     // @ts-expect-error
-    assert.notStrictEqual(
-      undefined,
-      definition[field],
-      `Converter field ${field} is undefined`
-    );
+    assert.notStrictEqual(undefined,definition[field],`Converter field ${field} is undefined`);
     // @ts-expect-error
     const msg = `Converter field ${field} expected type doenst match to ${definition[field]}`;
     // @ts-expect-error

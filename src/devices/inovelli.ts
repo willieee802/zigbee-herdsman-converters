@@ -1717,9 +1717,7 @@ const inovelliOnOffConvertSet = async (
   meta: Tz.Meta
 ) => {
   // @ts-expect-error
-  const state = meta.message.hasOwnProperty("state")
-    ? meta.message.state.toLowerCase()
-    : null;
+  const state = meta.message.hasOwnProperty('state') ? meta.message.state.toLowerCase() : null;
   utils.validateValue(state, ["toggle", "off", "on"]);
 
   if (
