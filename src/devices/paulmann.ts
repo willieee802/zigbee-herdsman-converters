@@ -7,6 +7,17 @@ const e = exposes.presets;
 
 const definitions: Definition[] = [
     {
+        zigbeeModel: ['501.37'],
+        model: '501.37',
+        vendor: 'Paulmann',
+        description: 'Smart switch 4 buttons white',
+        fromZigbee: [fz.command_on, fz.command_off, fz.battery, fz.command_move, fz.command_stop],
+        toZigbee: [],
+        exposes: [e.battery(), e.action(['on_1', 'off_1', 'on_2', 'off_2', 'brightness_move_up_1', 'brightness_move_down_1',
+            'brightness_move_stop_1', 'brightness_move_up_2', 'brightness_move_down_2', 'brightness_move_stop_2'])],
+        meta: {multiEndpoint: true},
+    },
+    {
         zigbeeModel: ['501.34'],
         model: '501.34',
         vendor: 'Paulmann',
@@ -64,14 +75,14 @@ const definitions: Definition[] = [
         model: '500.47',
         vendor: 'Paulmann',
         description: 'SmartHome Zigbee MaxLED RGBW controller max. 72W 24V DC',
-        extend: [light({colorTemp: {range: undefined}, color: {modes: ['xy', 'hs']}})],
+        extend: [light({colorTemp: {range: undefined}, color: {modes: ['xy', 'hs'], applyRedFix: true}})],
     },
     {
         zigbeeModel: ['RGBW light', '500.49', 'RGBW_light'],
         model: '50049/500.63',
         vendor: 'Paulmann',
         description: 'Smart Home Zigbee YourLED RGB Controller max. 60W / Smart Home Zigbee LED Reflektor 3,5W GU10 RGBW dimmbar',
-        extend: [light({colorTemp: {range: undefined}, color: {modes: ['xy', 'hs']}})],
+        extend: [light({colorTemp: {range: undefined}, color: {modes: ['xy', 'hs'], applyRedFix: true}})],
     },
     {
         zigbeeModel: ['RGBCW_LIGHT'],
@@ -146,21 +157,21 @@ const definitions: Definition[] = [
         model: '500.44',
         vendor: 'Paulmann',
         description: 'URail power supply',
-        extend: [light({color: true})],
+        extend: [light({color: {applyRedFix: true}})],
     },
     {
         zigbeeModel: ['500.45'],
         model: '500.45',
         vendor: 'Paulmann',
         description: 'SmartHome Zigbee Pendulum Light Aptare',
-        extend: [light()],
+        extend: [light({color: {applyRedFix: true}})],
     },
     {
         zigbeeModel: ['500.48'],
         model: '500.48',
         vendor: 'Paulmann',
         description: 'SmartHome Zigbee YourLED dim/switch controller max. 60 W',
-        extend: [light()],
+        extend: [light({color: {applyRedFix: true}})],
     },
     {
         fingerprint: [{manufacturerName: 'Paulmann Licht GmbH', modelID: 'Dimmable'}],

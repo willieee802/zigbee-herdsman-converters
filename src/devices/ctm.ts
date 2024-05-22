@@ -1,3 +1,4 @@
+import {Zcl} from 'zigbee-herdsman';
 import fz from '../converters/fromZigbee';
 import tz from '../converters/toZigbee';
 import * as exposes from '../lib/exposes';
@@ -5,19 +6,9 @@ import {KeyValue, Definition, Tz, Fz} from '../lib/types';
 import * as reporting from '../lib/reporting';
 import * as constants from '../lib/constants';
 import * as utils from '../lib/utils';
+import * as ota from '../lib/ota';
 const e = exposes.presets;
 const ea = exposes.access;
-
-const dataType = {
-    boolean: 16,
-    uint8: 32,
-    uint16: 33,
-    int8: 40,
-    int16: 41,
-    enum8: 48,
-    charStr: 66,
-    ieeeAddr: 240,
-};
 
 const fzLocal = {
     ctm_mbd_device_enabled: {
@@ -343,6 +334,16 @@ const tzLocal = {
             await entity.read('genOnOff', ['onOff']);
         },
     } satisfies Tz.Converter,
+    ctm_mbd_brightness: {
+        key: ['brightness'],
+        convertSet: async (entity, key, value, meta) => {
+            await entity.command(
+                'genLevelCtrl', 'moveToLevel', {level: value, transtime: 1}, utils.getOptions(meta.mapped, entity));
+        },
+        convertGet: async (entity, key, meta) => {
+            await entity.read('genLevelCtrl', ['currentLevel']);
+        },
+    } satisfies Tz.Converter,
     ctm_device_mode: {
         key: ['device_mode'],
         convertGet: async (entity, key, meta) => {
@@ -352,7 +353,7 @@ const tzLocal = {
     ctm_device_enabled: {
         key: ['device_enabled'],
         convertSet: async (entity, key, value, meta) => {
-            await entity.write('genOnOff', {0x2201: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+            await entity.write('genOnOff', {0x2201: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
         },
         convertGet: async (entity, key, meta) => {
             await entity.read('genOnOff', [0x2201]);
@@ -367,17 +368,20 @@ const tzLocal = {
     ctm_current_flag: {
         key: ['current_flag'],
         convertGet: async (entity, key, meta) => {
-            await entity.read('genOnOff', [0x5000], {manufacturerCode: 0x1337});
+            await entity.read('genOnOff', [0x5000], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
     } satisfies Tz.Converter,
     ctm_relay_state: {
         key: ['state'],
         convertSet: async (entity, key, value, meta) => {
-            await entity.write('genOnOff',
-                {0x5001: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}}, {manufacturerCode: 0x1337});
+            await entity.write(
+                'genOnOff',
+                {0x5001: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}},
+                {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS},
+            );
         },
         convertGet: async (entity, key, meta) => {
-            await entity.read('genOnOff', [0x5001], {manufacturerCode: 0x1337});
+            await entity.read('genOnOff', [0x5001], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
     } satisfies Tz.Converter,
     ctm_thermostat: {
@@ -387,56 +391,56 @@ const tzLocal = {
         convertSet: async (entity, key, value, meta) => {
             switch (key) {
             case 'load':
-                await entity.write('hvacThermostat', {0x0401: {value: value, type: dataType.uint16}});
+                await entity.write('hvacThermostat', {0x0401: {value: value, type: Zcl.DataType.UINT16}});
                 break;
             case 'display_text':
-                await entity.write('hvacThermostat', {0x0402: {value: value, type: dataType.charStr}});
+                await entity.write('hvacThermostat', {0x0402: {value: value, type: Zcl.DataType.CHAR_STR}});
                 break;
             case 'sensor':
                 await entity.write('hvacThermostat', {0x0403: {
                     value: utils.getFromLookup(value,
                         {'air': 0, 'floor': 1, 'external': 2, 'regulator': 3, 'mv_air': 4, 'mv_external': 5, 'mv_regulator': 6}),
-                    type: dataType.enum8}});
+                    type: Zcl.DataType.ENUM8}});
                 break;
             case 'regulator_mode':
                 await entity.write('hvacThermostat', {0x0405:
-                    {value: utils.getFromLookup(value, {'thermostat': 0, 'regulator': 1}), type: dataType.boolean}});
+                    {value: utils.getFromLookup(value, {'thermostat': 0, 'regulator': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'power_status':
-                await entity.write('hvacThermostat', {0x0406: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+                await entity.write('hvacThermostat', {0x0406: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'system_mode':
                 if (value === 'off') {
-                    await entity.write('hvacThermostat', {0x0406: {value: 0, type: dataType.boolean}});
+                    await entity.write('hvacThermostat', {0x0406: {value: 0, type: Zcl.DataType.BOOLEAN}});
                 } else if (value === 'heat') {
-                    await entity.write('hvacThermostat', {0x0422: {value: 3, type: dataType.uint8}});
+                    await entity.write('hvacThermostat', {0x0422: {value: 3, type: Zcl.DataType.UINT8}});
                 }
                 break;
             case 'night_switching':
-                await entity.write('hvacThermostat', {0x0411: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+                await entity.write('hvacThermostat', {0x0411: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'frost_guard':
-                await entity.write('hvacThermostat', {0x0412: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+                await entity.write('hvacThermostat', {0x0412: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'max_floor_temp':
-                await entity.write('hvacThermostat', {0x0414: {value: value, type: dataType.uint8}});
+                await entity.write('hvacThermostat', {0x0414: {value: value, type: Zcl.DataType.UINT8}});
                 break;
             case 'regulator_setpoint':
-                await entity.write('hvacThermostat', {0x0420: {value: value, type: dataType.uint8}});
+                await entity.write('hvacThermostat', {0x0420: {value: value, type: Zcl.DataType.UINT8}});
                 break;
             case 'regulation_mode':
                 await entity.write('hvacThermostat', {0x0421: {
                     value: utils.getFromLookup(value, {'thermostat': 0, 'regulator': 1, 'zzilent': 2}),
-                    type: dataType.uint8}});
+                    type: Zcl.DataType.UINT8}});
                 break;
             case 'max_floor_guard':
-                await entity.write('hvacThermostat', {0x0423: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+                await entity.write('hvacThermostat', {0x0423: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'weekly_timer':
-                await entity.write('hvacThermostat', {0x0424: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: dataType.boolean}});
+                await entity.write('hvacThermostat', {0x0424: {value: utils.getFromLookup(value, {'OFF': 0, 'ON': 1}), type: Zcl.DataType.BOOLEAN}});
                 break;
             case 'exteral_sensor_source':
-                await entity.write('hvacThermostat', {0x0428: {value: value, type: dataType.uint16}});
+                await entity.write('hvacThermostat', {0x0428: {value: value, type: Zcl.DataType.UINT16}});
                 break;
 
             default: // Unknown key
@@ -497,13 +501,13 @@ const tzLocal = {
         key: ['preset'],
         convertSet: async (entity, key, value, meta) => {
             const presetLookup = {'off': 0, 'away': 1, 'sleep': 2, 'home': 3};
-            await entity.write('hvacThermostat', {0x0422: {value: utils.getFromLookup(value, presetLookup), type: dataType.uint8}});
+            await entity.write('hvacThermostat', {0x0422: {value: utils.getFromLookup(value, presetLookup), type: Zcl.DataType.UINT8}});
         },
     } satisfies Tz.Converter,
     ctm_thermostat_child_lock: {
         key: ['child_lock'],
         convertSet: async (entity, key, value, meta) => {
-            await entity.write('hvacThermostat', {0x0413: {value: utils.getFromLookup(value, {'UNLOCK': 0, 'LOCK': 1}), type: dataType.boolean}});
+            await entity.write('hvacThermostat', {0x0413: {value: utils.getFromLookup(value, {'UNLOCK': 0, 'LOCK': 1}), type: Zcl.DataType.BOOLEAN}});
         },
     } satisfies Tz.Converter,
     ctm_thermostat_gets: {
@@ -545,7 +549,7 @@ const tzLocal = {
     ctm_group_config: {
         key: ['group_id'],
         convertGet: async (entity, key, meta) => {
-            await entity.read(0xFEA7, [0x0000], {manufacturerCode: 0x1337});
+            await entity.read(0xFEA7, [0x0000], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
     } satisfies Tz.Converter,
     ctm_sove_guard: {
@@ -557,64 +561,64 @@ const tzLocal = {
         convertGet: async (entity, key, meta) => {
             switch (key) {
             case 'alarm_status':
-                await entity.read(0xFFC9, [0x0001], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0001], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'battery_low':
-                await entity.read(0xFFC9, [0x0002], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0002], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'stove_temperature':
-                await entity.read(0xFFC9, [0x0003], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0003], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'ambient_temperature':
-                await entity.read(0xFFC9, [0x0004], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0004], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'active':
-                await entity.read(0xFFC9, [0x0005], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0005], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'runtime':
-                await entity.read(0xFFC9, [0x0006], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0006], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'runtime_timeout':
-                await entity.read(0xFFC9, [0x0007], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0007], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'reset_reason':
-                await entity.read(0xFFC9, [0x0008], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0008], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'dip_switch':
-                await entity.read(0xFFC9, [0x0009], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0009], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'sw_version':
-                await entity.read(0xFFC9, [0x000A], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x000A], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'hw_version':
-                await entity.read(0xFFC9, [0x000B], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x000B], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'bootloader_version':
-                await entity.read(0xFFC9, [0x000C], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x000C], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'model':
-                await entity.read(0xFFC9, [0x000D], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x000D], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'relay_address':
-                await entity.read(0xFFC9, [0x0010], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0010], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'current_flag':
-                await entity.read(0xFFC9, [0x0100], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0100], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'relay_current':
-                await entity.read(0xFFC9, [0x0101], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0101], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'relay_status':
-                await entity.read(0xFFC9, [0x0102], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0102], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'external_button':
-                await entity.read(0xFFC9, [0x0103], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0103], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'relay_alarm':
-                await entity.read(0xFFC9, [0x0104], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0104], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
             case 'relay_alarm_status':
-                await entity.read(0xFFC9, [0x0105], {manufacturerCode: 0x1337});
+                await entity.read(0xFFC9, [0x0105], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
                 break;
 
             default: // Unknown key
@@ -626,14 +630,15 @@ const tzLocal = {
 
 const definitions: Definition[] = [
     {
-        zigbeeModel: ['mTouch Dim'],
+        zigbeeModel: ['mTouch Dim', 'DimmerPille'],
         model: 'mTouch_Dim',
         vendor: 'CTM Lyng',
         description: 'mTouch Dim OP, touch dimmer',
         fromZigbee: [fz.on_off, fz.brightness, fz.lighting_ballast_configuration],
         toZigbee: [tz.on_off, tz.light_onoff_brightness, tz.light_brightness_move, tz.ballast_config],
         meta: {disableDefaultResponse: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'lightingBallastCfg']);
             await endpoint.read('genOnOff', ['onOff']);
@@ -664,6 +669,9 @@ const definitions: Definition[] = [
                 .withDescription('Specifies the maximum brightness value'),
             e.numeric('ballast_power_on_level', ea.ALL).withValueMin(1).withValueMax(99)
                 .withDescription('Specifies the initialisation light level. Can not be set lower than "ballast_minimum_level"')],
+        whiteLabel: [
+            {vendor: 'CTM Lyng', model: 'CTM_DimmerPille', description: 'CTM Lyng DimmerPille', fingerprint: [{modelID: 'DimmerPille'}]},
+        ],
     },
     {
         zigbeeModel: ['mTouch Bryter'],
@@ -674,13 +682,13 @@ const definitions: Definition[] = [
             fz.command_move, fz.command_stop, fzLocal.ctm_group_config],
         toZigbee: [],
         meta: {battery: {voltageToPercentage: '3V_2500_3200'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'msTemperatureMeasurement']);
             await reporting.batteryVoltage(endpoint);
             await endpoint.read('msTemperatureMeasurement', ['measuredValue']);
             await reporting.temperature(endpoint, {min: constants.repInterval.MINUTES_10, max: constants.repInterval.HOUR, change: 100});
-            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: 0x1337});
+            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
         exposes: [e.battery(), e.temperature(),
             e.action(['recall_1', 'recall_2', 'recall_3', 'on', 'off', 'toggle',
@@ -696,7 +704,8 @@ const definitions: Definition[] = [
         fromZigbee: [fz.thermostat, fzLocal.ctm_thermostat],
         toZigbee: [tz.thermostat_occupied_heating_setpoint, tz.thermostat_local_temperature, tzLocal.ctm_thermostat,
             tzLocal.ctm_thermostat_preset, tzLocal.ctm_thermostat_child_lock, tzLocal.ctm_thermostat_gets],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['hvacThermostat']);
             await endpoint.read('hvacThermostat', ['localTemp', 'occupiedHeatingSetpoint']);
@@ -707,56 +716,56 @@ const definitions: Definition[] = [
             // Regulator mode
             await endpoint.read('hvacThermostat', [0x0405]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0405, type: dataType.boolean},
+                attribute: {ID: 0x0405, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 1,
                 maximumReportInterval: constants.repInterval.MAX,
                 reportableChange: null}]);
             // Power consumption
             await endpoint.read('hvacThermostat', [0x0408]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0408, type: dataType.uint16},
+                attribute: {ID: 0x0408, type: Zcl.DataType.UINT16},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 5}]);
             // Floor temp sensor
             await endpoint.read('hvacThermostat', [0x0409]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0409, type: dataType.int16},
+                attribute: {ID: 0x0409, type: Zcl.DataType.INT16},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 10}]);
             // Frost guard
             await endpoint.read('hvacThermostat', [0x0412]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0412, type: dataType.boolean},
+                attribute: {ID: 0x0412, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.MAX,
                 reportableChange: null}]);
             // Child lock active/inactive
             await endpoint.read('hvacThermostat', [0x0413]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0413, type: dataType.boolean},
+                attribute: {ID: 0x0413, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.MAX,
                 reportableChange: null}]);
             // Regulator setpoint
             await endpoint.read('hvacThermostat', [0x0420]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0420, type: dataType.uint8},
+                attribute: {ID: 0x0420, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 1}]);
             // Operation mode
             await endpoint.read('hvacThermostat', [0x0422]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0422, type: dataType.uint8},
+                attribute: {ID: 0x0422, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 1}]);
             // Air temp sensor
             await endpoint.read('hvacThermostat', [0x0429]);
             await endpoint.configureReporting('hvacThermostat', [{
-                attribute: {ID: 0x0429, type: dataType.int16},
+                attribute: {ID: 0x0429, type: Zcl.DataType.INT16},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 10}]);
@@ -798,7 +807,8 @@ const definitions: Definition[] = [
         description: 'mStikk OP, wall socket',
         fromZigbee: [fz.on_off, fz.electrical_measurement, fz.metering],
         toZigbee: [tz.on_off],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await endpoint.read('haElectricalMeasurement', ['acVoltageMultiplier', 'acVoltageDivisor']);
@@ -821,33 +831,33 @@ const definitions: Definition[] = [
         description: 'mKomfy, stove guard',
         fromZigbee: [fz.temperature, fz.battery, fzLocal.ctm_sove_guard],
         toZigbee: [],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'msTemperatureMeasurement', 0xFFC9]);
             await reporting.batteryPercentageRemaining(endpoint);
             // await endpoint.read('msTemperatureMeasurement', ['measuredValue']);
             await reporting.temperature(endpoint, {min: constants.repInterval.MINUTES_10, max: constants.repInterval.HOUR, change: 100});
             // Alarm status
-            // await endpoint.read(0xFFC9, [0x0001], {manufacturerCode: 0x1337});
+            // await endpoint.read(0xFFC9, [0x0001], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             await endpoint.configureReporting(0xFFC9, [{
-                attribute: {ID: 0x0001, type: dataType.uint8},
+                attribute: {ID: 0x0001, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
-                reportableChange: 0}], {manufacturerCode: 0x1337});
+                reportableChange: 0}], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             // Change battery
-            // await endpoint.read(0xFFC9, [0x0002], {manufacturerCode: 0x1337});
+            // await endpoint.read(0xFFC9, [0x0002], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             await endpoint.configureReporting(0xFFC9, [{
-                attribute: {ID: 0x0002, type: dataType.uint8},
+                attribute: {ID: 0x0002, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.MAX,
-                reportableChange: 0}], {manufacturerCode: 0x1337});
+                reportableChange: 0}], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             // Active
-            // await endpoint.read(0xFFC9, [0x0005], {manufacturerCode: 0x1337});
+            // await endpoint.read(0xFFC9, [0x0005], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             await endpoint.configureReporting(0xFFC9, [{
-                attribute: {ID: 0x0005, type: dataType.uint8},
+                attribute: {ID: 0x0005, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
-                reportableChange: 0}], {manufacturerCode: 0x1337});
+                reportableChange: 0}], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
         exposes: [e.battery(), e.battery_low(), e.temperature(),
             e.enum('alarm_status', ea.STATE, ['ok', 'tamper', 'high_temperatur', 'timer', 'battery_alarm', 'error', 'unknown'])
@@ -864,7 +874,7 @@ const definitions: Definition[] = [
             fzLocal.ctm_child_lock, fzLocal.ctm_group_config],
         toZigbee: [tz.on_off, tzLocal.ctm_device_enabled],
         meta: {disableDefaultResponse: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await endpoint.read('genOnOff', ['onOff']);
@@ -872,23 +882,23 @@ const definitions: Definition[] = [
             // Device mode
             await endpoint.read('genOnOff', [0x2200]);
             await endpoint.configureReporting('genOnOff', [{
-                attribute: {ID: 0x2200, type: dataType.uint8},
+                attribute: {ID: 0x2200, type: Zcl.DataType.UINT8},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: 0}]);
             await endpoint.read('genOnOff', [0x2201]);
             await endpoint.configureReporting('genOnOff', [{
-                attribute: {ID: 0x2201, type: dataType.boolean},
+                attribute: {ID: 0x2201, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: null}]);
             await endpoint.read('genOnOff', [0x2202]);
             await endpoint.configureReporting('genOnOff', [{
-                attribute: {ID: 0x2202, type: dataType.boolean},
+                attribute: {ID: 0x2202, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 0,
                 maximumReportInterval: constants.repInterval.HOUR,
                 reportableChange: null}]);
-            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: 0x1337});
+            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
         exposes: [e.switch(), e.action(['on', 'off']),
             e.enum('device_mode', ea.STATE, ['astro_clock', 'timer', 'daily_timer', 'weekly_timer'])
@@ -909,7 +919,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.battery, fz.ias_enroll, fzLocal.ctm_water_leak_alarm],
         toZigbee: [],
         meta: {battery: {voltageToPercentage: '3V_2500_3200'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'ssIasZone']);
             await reporting.batteryVoltage(endpoint);
@@ -928,7 +938,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.ias_enroll, fzLocal.ctm_water_leak_alarm],
         toZigbee: [tz.on_off],
         meta: {disableDefaultResponse: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await endpoint.read('genOnOff', ['onOff']);
@@ -951,14 +961,14 @@ const definitions: Definition[] = [
             fzLocal.ctm_group_config],
         toZigbee: [],
         meta: {battery: {voltageToPercentage: '3V_2500_3200'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'ssIasZone', 'msTemperatureMeasurement']);
             await reporting.batteryVoltage(endpoint);
             await endpoint.read('ssIasZone', ['iasCieAddr', 'zoneState', 'zoneId']);
             await endpoint.read('msTemperatureMeasurement', ['measuredValue']);
             await reporting.temperature(endpoint, {min: constants.repInterval.MINUTES_10, max: constants.repInterval.HOUR, change: 100});
-            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: 0x1337});
+            await endpoint.read(0xFEA7, [0x0000], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
         exposes: [e.temperature(), e.battery(), e.battery_low(), e.smoke(),
             e.action(['on', 'off']),
@@ -974,7 +984,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.battery, fz.temperature, fz.humidity],
         toZigbee: [],
         meta: {battery: {voltageToPercentage: '3V_2500_3200'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'msTemperatureMeasurement', 'msRelativeHumidity']);
             await reporting.batteryVoltage(endpoint);
@@ -993,7 +1003,8 @@ const definitions: Definition[] = [
         fromZigbee: [fz.illuminance, fz.occupancy, fzLocal.ctm_mbd_device_enabled, fzLocal.ctm_relay_state],
         toZigbee: [tzLocal.ctm_mbd_device_enabled, tzLocal.ctm_relay_state],
         meta: {disableDefaultResponse: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        ota: ota.zigbeeOTA,
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'msIlluminanceMeasurement', 'msOccupancySensing']);
             await endpoint.read('genOnOff', ['onOff']);
@@ -1003,16 +1014,72 @@ const definitions: Definition[] = [
             await endpoint.read('msOccupancySensing', ['occupancy']);
             await reporting.occupancy(endpoint);
             // Relay State
-            await endpoint.read('genOnOff', [0x5001], {manufacturerCode: 0x1337});
+            await endpoint.read('genOnOff', [0x5001], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
             await endpoint.configureReporting('genOnOff', [{
-                attribute: {ID: 0x5001, type: dataType.boolean},
+                attribute: {ID: 0x5001, type: Zcl.DataType.BOOLEAN},
                 minimumReportInterval: 1,
                 maximumReportInterval: constants.repInterval.HOUR,
-                reportableChange: 0}], {manufacturerCode: 0x1337});
+                reportableChange: 0}], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
         },
         exposes: [e.switch(), e.illuminance(), e.illuminance_lux(), e.occupancy(),
             e.binary('device_enabled', ea.ALL, 'ON', 'OFF')
                 .withDescription('Turn the device on or off'),
+        ],
+    },
+    {
+        zigbeeModel: ['MBD Dim'],
+        model: 'CTM_MBD_Dim',
+        vendor: 'CTM Lyng',
+        description: 'MBD Dim, motion detector with dimmer',
+        fromZigbee: [fz.illuminance, fz.occupancy, fzLocal.ctm_mbd_device_enabled, fzLocal.ctm_relay_state,
+            fz.brightness, fz.lighting_ballast_configuration],
+        toZigbee: [tzLocal.ctm_mbd_device_enabled, tzLocal.ctm_relay_state, tzLocal.ctm_mbd_brightness, tz.ballast_config],
+        meta: {disableDefaultResponse: true},
+        configure: async (device, coordinatorEndpoint) => {
+            const endpoint = device.getEndpoint(1);
+            await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'lightingBallastCfg',
+                'msIlluminanceMeasurement', 'msOccupancySensing']);
+            await endpoint.read('genOnOff', ['onOff']);
+            await reporting.onOff(endpoint);
+            await endpoint.read('genLevelCtrl', ['currentLevel']);
+            await reporting.brightness(endpoint);
+            await endpoint.read('lightingBallastCfg', ['minLevel', 'maxLevel', 'powerOnLevel']);
+            await endpoint.configureReporting('lightingBallastCfg', [{
+                attribute: 'minLevel',
+                minimumReportInterval: 0,
+                maximumReportInterval: constants.repInterval.HOUR,
+                reportableChange: null}]);
+            await endpoint.configureReporting('lightingBallastCfg', [{
+                attribute: 'maxLevel',
+                minimumReportInterval: 0,
+                maximumReportInterval: constants.repInterval.HOUR,
+                reportableChange: null}]);
+            await endpoint.configureReporting('lightingBallastCfg', [{
+                attribute: 'powerOnLevel',
+                minimumReportInterval: 0,
+                maximumReportInterval: constants.repInterval.HOUR,
+                reportableChange: null}]);
+            await endpoint.read('msIlluminanceMeasurement', ['measuredValue']);
+            await reporting.illuminance(endpoint);
+            await endpoint.read('msOccupancySensing', ['occupancy']);
+            await reporting.occupancy(endpoint);
+            // Relay State
+            await endpoint.read('genOnOff', [0x5001], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
+            await endpoint.configureReporting('genOnOff', [{
+                attribute: {ID: 0x5001, type: Zcl.DataType.BOOLEAN},
+                minimumReportInterval: 1,
+                maximumReportInterval: constants.repInterval.HOUR,
+                reportableChange: 0}], {manufacturerCode: Zcl.ManufacturerCode.DATEK_WIRELESS_AS});
+        },
+        exposes: [e.light_brightness(), e.illuminance(), e.illuminance_lux(), e.occupancy(),
+            e.binary('device_enabled', ea.ALL, 'ON', 'OFF')
+                .withDescription('Turn the device on or off'),
+            e.numeric('ballast_minimum_level', ea.ALL).withValueMin(10).withValueMax(97)
+                .withDescription('Specifies the minimum brightness value'),
+            e.numeric('ballast_maximum_level', ea.ALL).withValueMin(10).withValueMax(97)
+                .withDescription('Specifies the maximum brightness value'),
+            e.numeric('ballast_power_on_level', ea.ALL).withValueMin(10).withValueMax(97)
+                .withDescription('Specifies the initialisation light level. Can not be set lower than "ballast_minimum_level"'),
         ],
     },
 ];

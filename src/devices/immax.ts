@@ -16,10 +16,10 @@ const definitions: Definition[] = [
         model: '07752L',
         description: 'NEO smart internal double socket',
         vendor: 'Immax',
-        extend: tuya.extend.switch({
-            electricalMeasurements: true, powerOutageMemory: true, indicatorMode: true, childLock: true, endpoints: ['l1', 'l2']}),
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await tuya.configureMagicPacket(device, coordinatorEndpoint, logger);
+        extend: [tuya.modernExtend.tuyaOnOff({
+            electricalMeasurements: true, powerOutageMemory: true, indicatorMode: true, childLock: true, endpoints: ['l1', 'l2']})],
+        configure: async (device, coordinatorEndpoint) => {
+            await tuya.configureMagicPacket(device, coordinatorEndpoint);
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await reporting.rmsVoltage(endpoint, {change: 5});
@@ -85,7 +85,7 @@ const definitions: Definition[] = [
         model: '07743L',
         vendor: 'Immax',
         description: 'Neo Smart LED E27 11W RGB + CCT, color, dimmable, Zigbee 3.0',
-        extend: tuya.extend.light_onoff_brightness_colortemp_color({colorTempRange: [153, 500]}),
+        extend: [tuya.modernExtend.tuyaLight({colorTemp: {range: [153, 500]}, color: true})],
     },
     {
         zigbeeModel: ['Keyfob-ZB3.0'],
@@ -112,7 +112,7 @@ const definitions: Definition[] = [
         description: 'NEO SMART plug',
         fromZigbee: [fz.on_off, fz.electrical_measurement, fz.metering],
         toZigbee: [tz.on_off],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await reporting.onOff(endpoint);
@@ -160,7 +160,7 @@ const definitions: Definition[] = [
         description: 'Intelligent motion sensor',
         fromZigbee: [fz.ias_occupancy_alarm_1, fz.battery, fz.temperature, fz.illuminance, fz.humidity, fz.ignore_iaszone_report],
         toZigbee: [],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['msTemperatureMeasurement', 'msRelativeHumidity', 'msIlluminanceMeasurement'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -226,6 +226,16 @@ const definitions: Definition[] = [
                 [29, 'action', tuya.valueConverter.static('sos')],
             ],
         },
+    },
+    {
+        fingerprint: [{modelID: 'TS004F', manufacturerName: '_TZ3000_krwtzhfd'}],
+        model: '07767L',
+        vendor: 'Immax',
+        description: 'NEO Smart outdoor button',
+        exposes: [e.battery(), e.action(['single', 'double', 'hold'])],
+        fromZigbee: [fz.battery, tuya.fz.on_off_action],
+        toZigbee: [],
+        configure: tuya.configureMagicPacket,
     },
 ];
 

@@ -1,14 +1,12 @@
-import {Buffer} from 'node:buffer';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import tz from '../converters/toZigbee';
 import * as constants from '../lib/constants';
 import * as reporting from '../lib/reporting';
-import extend from '../lib/extend';
 import {
     light, numeric, binary, enumLookup, forceDeviceType,
     temperature, humidity, forcePowerSource, quirkAddEndpointCluster,
-    quirkCheckinInterval, customTimeResponse, deviceEndpoints,
+    quirkCheckinInterval, customTimeResponse, deviceEndpoints, battery,
 } from '../lib/modernExtend';
 const e = exposes.presets;
 const ea = exposes.access;
@@ -19,29 +17,15 @@ const {
     lumiSwitchType, lumiAirQuality, lumiVoc, lumiDisplayUnit, lumiLight,
     lumiOutageCountRestoreBindReporting, lumiElectricityMeter, lumiPower,
     lumiOverloadProtection, lumiLedIndicator, lumiButtonLock, lumiMotorSpeed,
-    lumiOnOff, lumiLedDisabledNight, lumiFlipIndicatorLight,
+    lumiOnOff, lumiLedDisabledNight, lumiFlipIndicatorLight, lumiPreventReset,
+    lumiClickMode, lumiSlider, lumiSetEventMode, lumiSwitchMode, lumiVibration,
+    lumiKnobRotation, lumiCommandMode, lumiBattery,
 } = lumi.modernExtend;
-import {Definition, OnEvent} from '../lib/types';
-const {manufacturerCode} = lumi;
+import {Definition} from '../lib/types';
+import {logger} from '../lib/logger';
 
-const preventReset: OnEvent = async (type, data, device) => {
-    if (
-        // options.allow_reset ||
-        type !== 'message' ||
-        data.type !== 'attributeReport' ||
-        data.cluster !== 'genBasic' ||
-        !data.data[0xfff0] ||
-        // eg: [0xaa, 0x10, 0x05, 0x41, 0x87, 0x01, 0x01, 0x10, 0x00]
-        !data.data[0xFFF0].slice(0, 5).equals(Buffer.from([0xaa, 0x10, 0x05, 0x41, 0x87]))
-    ) {
-        return;
-    }
-    const payload = {[0xfff0]: {
-        value: [0xaa, 0x10, 0x05, 0x41, 0x47, 0x01, 0x01, 0x10, 0x01],
-        type: 0x41,
-    }};
-    await device.getEndpoint(1).write('genBasic', payload, {manufacturerCode});
-};
+const NS = 'zhc:lumi';
+const {manufacturerCode} = lumi;
 
 const definitions: Definition[] = [
     {
@@ -53,7 +37,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         exposes: [e.water_leak(), e.battery(), e.battery_low(), e.battery_voltage(), e.device_temperature(), e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
         },
@@ -78,7 +62,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         exposes: [e.contact(), e.battery(), e.battery_low(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
         },
@@ -109,14 +93,9 @@ const definitions: Definition[] = [
         model: 'ZNDDMK11LM',
         vendor: 'Aqara',
         description: 'Smart lightstrip driver',
-        fromZigbee: extend.light_onoff_brightness_colortemp_color().fromZigbee.concat([
-            lumi.fromZigbee.lumi_power, lumi.fromZigbee.lumi_specific]),
-        toZigbee: extend.light_onoff_brightness_colortemp_color().toZigbee.concat([
-            lumi.toZigbee.lumi_dimmer_mode, lumi.toZigbee.lumi_switch_power_outage_memory]),
-        meta: {multiEndpoint: true},
-        endpoint: (device) => {
-            return {l1: 1, l2: 2};
-        },
+        fromZigbee: [lumi.fromZigbee.lumi_power, lumi.fromZigbee.lumi_specific, ...light({colorTemp: {range: undefined}, color: true}).fromZigbee],
+        toZigbee: [lumi.toZigbee.lumi_dimmer_mode, lumi.toZigbee.lumi_switch_power_outage_memory,
+            ...light({colorTemp: {range: undefined}, color: true}).toZigbee],
         exposes: [e.power(), e.energy(), e.voltage(), e.device_temperature(), e.power_outage_memory(),
             // When in rgbw mode, only one of color and colortemp will be valid, and l2 will be invalid
             // Do not control l2 in rgbw mode
@@ -124,7 +103,10 @@ const definitions: Definition[] = [
             e.light_brightness_colortemp([153, 370]).removeFeature('color_temp_startup').withEndpoint('l2'),
             e.enum('dimmer_mode', ea.ALL, ['rgbw', 'dual_ct'])
                 .withDescription('Switch between rgbw mode or dual color temperature mode')],
-        extend: [lumiZigbeeOTA()],
+        extend: [
+            deviceEndpoints({endpoints: {l1: 1, l2: 2}}),
+            lumiZigbeeOTA(),
+        ],
     },
     {
         zigbeeModel: ['lumi.light.aqcn02'],
@@ -138,7 +120,7 @@ const definitions: Definition[] = [
         model: 'ZNXDD01LM',
         vendor: 'Aqara',
         description: 'Ceiling light L1-350',
-        extend: [lumiLight({colorTemp: true}), lumiZigbeeOTA()],
+        extend: [lumiLight({colorTemp: true, powerOutageMemory: 'switch'}), lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.light.cwac02', 'lumi.light.acn014'],
@@ -148,7 +130,7 @@ const definitions: Definition[] = [
         whiteLabel: [{vendor: 'Aqara', model: 'LEDLBT1-L01'}],
         extend: [
             lumiZigbeeOTA(),
-            lumiLight({colorTemp: true}),
+            lumiLight({colorTemp: true, powerOutageMemory: 'switch'}),
             forceDeviceType({type: 'Router'}),
             forcePowerSource({powerSource: 'Mains (single phase)'}),
         ],
@@ -159,7 +141,7 @@ const definitions: Definition[] = [
         vendor: 'Aqara',
         description: 'Opple MX960',
         meta: {turnsOffAtBrightness1: true},
-        extend: [lumiLight({colorTemp: true}), lumiZigbeeOTA()],
+        extend: [lumiLight({colorTemp: true, powerOutageMemory: 'switch'}), lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.light.cwopcn02'],
@@ -167,7 +149,7 @@ const definitions: Definition[] = [
         vendor: 'Aqara',
         description: 'Opple MX650',
         meta: {turnsOffAtBrightness1: true},
-        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true})],
+        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.light.cwopcn03'],
@@ -175,21 +157,21 @@ const definitions: Definition[] = [
         vendor: 'Aqara',
         description: 'Opple MX480',
         meta: {turnsOffAtBrightness1: true},
-        extend: [lumiLight({colorTemp: true}), lumiZigbeeOTA()],
+        extend: [lumiLight({colorTemp: true, powerOutageMemory: 'switch'}), lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.light.cwjwcn01'],
         model: 'JWSP001A',
         vendor: 'Aqara',
         description: 'Jiawen LED Driver & Dimmer',
-        extend: [lumiLight({colorTemp: true})],
+        extend: [lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.light.cwjwcn02'],
         model: 'JWDL001A',
         vendor: 'Aqara',
         description: 'Embedded spot led light',
-        extend: [lumiLight({colorTemp: true})],
+        extend: [lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.sensor_switch'],
@@ -241,8 +223,7 @@ const definitions: Definition[] = [
         exposes: [e.battery(), e.action(['single']), e.battery_voltage()],
         fromZigbee: [lumi.fromZigbee.lumi_action, lumi.fromZigbee.lumi_basic, lumi.legacyFromZigbee.WXKG03LM_click],
         toZigbee: [],
-        onEvent: preventReset,
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.remote.b186acn01'],
@@ -254,8 +235,7 @@ const definitions: Definition[] = [
         fromZigbee: [lumi.fromZigbee.lumi_action, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_basic,
             lumi.legacyFromZigbee.WXKG03LM_click, lumi.legacyFromZigbee.lumi_action_click_multistate],
         toZigbee: [],
-        onEvent: preventReset,
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.remote.b186acn02'],
@@ -267,10 +247,9 @@ const definitions: Definition[] = [
         exposes: [e.battery(),
             e.action(['single', 'double', 'hold']),
             e.battery_voltage()],
-        onEvent: preventReset,
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
+        configure: async (device, coordinatorEndpoint) => {
             try {
                 const endpoint = device.endpoints[1];
                 await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genPowerCfg']);
@@ -375,8 +354,7 @@ const definitions: Definition[] = [
         exposes: [e.battery(), e.action(['single_left', 'single_right', 'single_both']), e.battery_voltage(), e.power_outage_count(false)],
         fromZigbee: [lumi.fromZigbee.lumi_action, lumi.fromZigbee.lumi_basic, lumi.legacyFromZigbee.WXKG02LM_click],
         toZigbee: [],
-        onEvent: preventReset,
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.remote.b286acn01'],
@@ -389,8 +367,7 @@ const definitions: Definition[] = [
         fromZigbee: [lumi.fromZigbee.lumi_action, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_basic,
             lumi.legacyFromZigbee.WXKG02LM_click, lumi.legacyFromZigbee.WXKG02LM_click_multistate],
         toZigbee: [],
-        onEvent: preventReset,
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b1laus01'],
@@ -407,15 +384,14 @@ const definitions: Definition[] = [
                 .withDescription('Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.'),
             e.power_outage_count(), e.device_temperature().withAccess(ea.STATE)],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set "event" mode
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b2laus01'],
@@ -449,13 +425,12 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'top': 1, 'bottom': 2};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write(
                 'manuSpecificLumi', {mode: 1}, {manufacturerCode: manufacturerCode, disableResponse: true},
             );
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b1naus01'],
@@ -470,13 +445,12 @@ const definitions: Definition[] = [
             e.power().withAccess(ea.STATE_GET), e.energy(), e.voltage(), e.power_outage_memory(),
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode')],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set "event" mode
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b2naus01'],
@@ -504,17 +478,16 @@ const definitions: Definition[] = [
             e.voltage(),
             e.power_outage_memory(),
             e.action(['single_top', 'single_bottom', 'single_both', 'double_top', 'double_bottom', 'double_both'])],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: (device) => {
             return {'top': 1, 'bottom': 2};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write(
                 'manuSpecificLumi', {mode: 1}, {manufacturerCode: manufacturerCode, disableResponse: true},
             );
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.l1acn1'],
@@ -534,11 +507,10 @@ const definitions: Definition[] = [
                     'Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.'),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.l2acn1'],
@@ -564,11 +536,10 @@ const definitions: Definition[] = [
                     'Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.'),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.l3acn1'],
@@ -603,10 +574,10 @@ const definitions: Definition[] = [
                 'single_center_right', 'double_center_right', 'single_all', 'double_all',
             ]),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
+        extend: [lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n1acn1'],
@@ -622,15 +593,14 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode'),
             e.power_outage_count()],
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n2acn1'],
         model: 'QBKG31LM',
         vendor: 'Aqara',
         description: 'Smart wall switch H1 Pro (with neutral, double rocker)',
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: (device) => {
             return {'left': 1, 'right': 2};
         },
@@ -647,8 +617,7 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode for right button').withEndpoint('right'),
             e.power_outage_count()],
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n3acn1'],
@@ -676,8 +645,7 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode for center button').withEndpoint('center'),
             e.power_outage_count()],
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.l1aeu1'],
@@ -693,12 +661,12 @@ const definitions: Definition[] = [
             e.mode_switch_select(['anti_flicker_mode', 'quick_mode'])
                 .withDescription('Features. Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.')],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set "event" mode
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
+        extend: [lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.l2aeu1'],
@@ -725,10 +693,10 @@ const definitions: Definition[] = [
                 .withDescription('Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.'),
             e.action(['single_left', 'double_left', 'single_right', 'double_right', 'single_both', 'double_both'])],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
+        extend: [lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n1aeu1'],
@@ -741,13 +709,12 @@ const definitions: Definition[] = [
         exposes: [e.switch(), e.action(['single', 'double']), e.power().withAccess(ea.STATE_GET), e.energy(), e.flip_indicator_light(),
             e.power_outage_memory(), e.device_temperature().withAccess(ea.STATE), e.led_disabled_night(), e.power_outage_count(),
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled']).withDescription('Decoupled mode')],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set "event" mode
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n2aeu1'],
@@ -757,7 +724,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_power, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific],
         toZigbee: [tz.on_off, lumi.toZigbee.lumi_power, lumi.toZigbee.lumi_switch_operation_mode_opple, lumi.toZigbee.lumi_switch_power_outage_memory,
             lumi.toZigbee.lumi_flip_indicator_light, lumi.toZigbee.lumi_led_disabled_night],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: (device) => {
             return {'left': 1, 'right': 2};
         },
@@ -769,12 +736,12 @@ const definitions: Definition[] = [
             e.action(['single_left', 'double_left', 'single_right', 'double_right', 'single_both', 'double_both']),
             e.device_temperature().withAccess(ea.STATE), e.power_outage_memory(), e.flip_indicator_light(),
             e.led_disabled_night(), e.power_outage_count()],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set "event" mode
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
+        extend: [lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.ctrl_neutral1'],
@@ -792,13 +759,12 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1, 'default': 2};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.save();
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.ctrl_ln1.aq1', 'lumi.ctrl_ln1'],
@@ -820,9 +786,8 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1};
         },
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
@@ -856,13 +821,12 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1, 'left': 2, 'right': 3};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.save();
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.ctrl_ln2.aq1', 'lumi.ctrl_ln2'],
@@ -887,14 +851,13 @@ const definitions: Definition[] = [
                 .withDescription('Operation mode for right button')
                 .withEndpoint('right'),
         ],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         toZigbee: [tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_basic, lumi.toZigbee.lumi_power],
         endpoint: (device) => {
             return {'left': 1, 'right': 2, 'system': 1};
         },
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
@@ -916,8 +879,7 @@ const definitions: Definition[] = [
             'single_left', 'single_right', 'single_both',
             'double_left', 'double_right', 'double_both',
             'hold_left', 'hold_right', 'hold_both'])],
-        onEvent: preventReset,
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b1lacn02'],
@@ -936,8 +898,8 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1, 'default': 2};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [lumiPreventReset()],
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.powerSource = 'Mains (single phase)';
@@ -969,8 +931,8 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1, 'left': 2, 'right': 3};
         },
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [lumiPreventReset()],
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.save();
@@ -1010,11 +972,10 @@ const definitions: Definition[] = [
                 'single_center_right', 'double_center_right', 'single_all', 'double_all']),
             e.power_outage_count(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.n3acn3'],
@@ -1046,11 +1007,10 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'left': 1, 'center': 2, 'right': 3};
         },
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b1nacn02'],
@@ -1062,7 +1022,6 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'system': 1};
         },
-        onEvent: preventReset,
         exposes: [
             e.switch(), e.power().withAccess(ea.STATE_GET),
             e.energy(), e.device_temperature().withAccess(ea.STATE),
@@ -1070,12 +1029,12 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
                 .withDescription('Decoupled mode'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.type = 'Router';
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b2nacn02'],
@@ -1085,7 +1044,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_power, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_operation_mode_basic,
             lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_basic],
         toZigbee: [tz.on_off, lumi.toZigbee.lumi_power, lumi.toZigbee.lumi_switch_operation_mode_basic],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: (device) => {
             return {'left': 1, 'right': 2, 'system': 1};
         },
@@ -1104,21 +1063,20 @@ const definitions: Definition[] = [
                 .withDescription('Decoupled mode for right button')
                 .withEndpoint('right'),
         ],
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b1lacn01'],
         model: 'QBKG17LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (no neutral, single rocker)',
-        onEvent: preventReset,
         extend: [
             lumiZigbeeOTA(),
             lumiOnOff({powerOutageMemory: 'binary', operationMode: true}),
             lumiLedDisabledNight(),
             lumiFlipIndicatorLight(),
             lumiAction({actionLookup: {'single': 1, 'double': 2}}),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1126,7 +1084,6 @@ const definitions: Definition[] = [
         model: 'QBKG18LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (no neutral, double rocker)',
-        onEvent: preventReset,
         extend: [
             lumiZigbeeOTA(),
             deviceEndpoints({endpoints: {'left': 1, 'right': 2}}),
@@ -1134,6 +1091,7 @@ const definitions: Definition[] = [
             lumiLedDisabledNight(),
             lumiFlipIndicatorLight(),
             lumiAction({actionLookup: {'single': 1, 'double': 2}, buttonLookup: {'left': 41, 'right': 42, 'both': 51}}),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1141,7 +1099,6 @@ const definitions: Definition[] = [
         model: 'QBKG19LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (with neutral, single rocker)',
-        onEvent: preventReset,
         extend: [
             lumiZigbeeOTA(),
             lumiOnOff({powerOutageMemory: 'binary', operationMode: true}),
@@ -1150,6 +1107,7 @@ const definitions: Definition[] = [
             lumiAction({actionLookup: {'single': 1, 'double': 2}}),
             lumiElectricityMeter(),
             lumiPower(),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1157,7 +1115,6 @@ const definitions: Definition[] = [
         model: 'QBKG20LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (with neutral, double rocker)',
-        onEvent: preventReset,
         extend: [
             forceDeviceType({type: 'Router'}),
             forcePowerSource({powerSource: 'Mains (single phase)'}),
@@ -1169,6 +1126,7 @@ const definitions: Definition[] = [
             lumiAction({actionLookup: {'single': 1, 'double': 2}, buttonLookup: {'left': 41, 'right': 42, 'both': 51}}),
             lumiElectricityMeter(),
             lumiPower(),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1176,7 +1134,6 @@ const definitions: Definition[] = [
         model: 'QBKG33LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (no neutral, triple rocker)',
-        onEvent: preventReset,
         extend: [
             lumiZigbeeOTA(),
             deviceEndpoints({endpoints: {'left': 1, 'center': 2, 'right': 3}}),
@@ -1188,6 +1145,7 @@ const definitions: Definition[] = [
                 'left_center': 51, 'left_right': 52, 'center_right': 53,
                 'all': 61,
             }}),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1195,7 +1153,6 @@ const definitions: Definition[] = [
         model: 'QBKG34LM',
         vendor: 'Aqara',
         description: 'Smart wall switch T1 (with neutral, triple rocker)',
-        onEvent: preventReset,
         extend: [
             lumiZigbeeOTA(),
             deviceEndpoints({endpoints: {'left': 1, 'center': 2, 'right': 3}}),
@@ -1209,6 +1166,7 @@ const definitions: Definition[] = [
             }}),
             lumiElectricityMeter(),
             lumiPower(),
+            lumiPreventReset(),
         ],
     },
     {
@@ -1236,7 +1194,7 @@ const definitions: Definition[] = [
         fromZigbee: [lumi.fromZigbee.lumi_basic, lumi.fromZigbee.lumi_temperature, fz.humidity, fz.pressure],
         toZigbee: [],
         exposes: [e.battery(), e.temperature(), e.humidity(), e.pressure(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Battery';
             device.save();
         },
@@ -1247,13 +1205,16 @@ const definitions: Definition[] = [
         model: 'WSDCGQ12LM',
         vendor: 'Aqara',
         description: 'Temperature and humidity sensor T1',
-        whiteLabel: [{vendor: 'Aqara', model: 'TH-S02D'}],
-        fromZigbee: [lumi.fromZigbee.lumi_specific, fz.temperature, fz.humidity, fz.pressure, fz.battery],
+        whiteLabel: [
+            {vendor: 'Aqara', model: 'TH-S02D'},
+            {vendor: 'Yandex', model: 'YNDX-00523'},
+        ],
+        fromZigbee: [lumi.fromZigbee.lumi_specific, fz.temperature, fz.humidity, lumi.fromZigbee.lumi_pressure, fz.battery],
         toZigbee: [],
         exposes: [e.temperature(), e.humidity(), e.pressure(), e.device_temperature(), e.battery(), e.battery_voltage(),
             e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['msTemperatureMeasurement', 'msRelativeHumidity', 'msPressureMeasurement'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -1295,6 +1256,7 @@ const definitions: Definition[] = [
         model: 'RTCGQ12LM',
         vendor: 'Aqara',
         description: 'Motion sensor T1',
+        whiteLabel: [{vendor: 'Yandex', model: 'YNDX-00522'}],
         fromZigbee: [lumi.fromZigbee.lumi_occupancy_illuminance, lumi.fromZigbee.lumi_specific, fz.battery],
         toZigbee: [lumi.toZigbee.lumi_detection_interval],
         exposes: [e.occupancy(), e.illuminance_lux().withProperty('illuminance'),
@@ -1303,7 +1265,7 @@ const definitions: Definition[] = [
                 .withDescription('Time interval for detecting actions'),
             e.device_temperature(), e.battery(), e.battery_voltage(), e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
             await endpoint.read('manuSpecificLumi', [0x0102], {manufacturerCode: manufacturerCode});
@@ -1322,7 +1284,7 @@ const definitions: Definition[] = [
                 .withDescription('Time interval for detecting actions'),
             e.device_temperature(), e.battery(), e.battery_voltage(), e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
             await endpoint.read('manuSpecificLumi', [0x0102], {manufacturerCode: manufacturerCode});
@@ -1349,7 +1311,7 @@ const definitions: Definition[] = [
                 'Press pairing button right before changing this otherwise it will fail.'),
             e.device_temperature(), e.battery(), e.battery_voltage()],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
             await endpoint.read('manuSpecificLumi', [0x0102], {manufacturerCode: manufacturerCode});
@@ -1371,7 +1333,7 @@ const definitions: Definition[] = [
                 .withDescription('Time interval for detecting actions'),
             e.device_temperature(), e.battery(), e.battery_voltage(), e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
             await endpoint.read('manuSpecificLumi', [0x0102], {manufacturerCode: manufacturerCode});
@@ -1436,7 +1398,7 @@ const definitions: Definition[] = [
                     .withValueMax(lumi.presence.constants.region_config_regionId_max),
                 ),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.softwareBuildID = `${device.applicationVersion}`;
             device.save();
 
@@ -1496,7 +1458,10 @@ const definitions: Definition[] = [
         model: 'SJCGQ12LM',
         vendor: 'Aqara',
         description: 'Water leak sensor T1',
-        whiteLabel: [{vendor: 'Aqara', model: 'WL-S02D'}],
+        whiteLabel: [
+            {vendor: 'Aqara', model: 'WL-S02D'},
+            {vendor: 'Yandex', model: 'YNDX-00521'},
+        ],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         fromZigbee: [lumi.fromZigbee.lumi_basic, fz.ias_water_leak_alarm_1, lumi.fromZigbee.lumi_specific],
         toZigbee: [],
@@ -1581,7 +1546,7 @@ const definitions: Definition[] = [
             lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power, fz.device_temperature],
         toZigbee: [tz.on_off, lumi.toZigbee.lumi_switch_power_outage_memory, lumi.toZigbee.lumi_led_disabled_night,
             lumi.toZigbee.lumi_overload_protection, lumi.toZigbee.lumi_auto_off, lumi.toZigbee.lumi_socket_button_lock],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await reporting.onOff(endpoint);
@@ -1595,16 +1560,16 @@ const definitions: Definition[] = [
                 await reporting.bind(endpoint, coordinatorEndpoint, ['haElectricalMeasurement']);
                 await endpoint.read('haElectricalMeasurement', ['acPowerMultiplier', 'acPowerDivisor']);
             } catch (e) {
-                logger.warn(`SP-EUC01 failed to setup electricity measurements (${e.message})`);
-                logger.debug(e.stack);
+                logger.warning(`SP-EUC01 failed to setup electricity measurements (${e.message})`, NS);
+                logger.debug(e.stack, NS);
             }
             try {
                 await reporting.bind(endpoint, coordinatorEndpoint, ['seMetering']);
                 await reporting.readMeteringMultiplierDivisor(endpoint);
                 await reporting.currentSummDelivered(endpoint, {change: 0});
             } catch (e) {
-                logger.warn(`SP-EUC01 failed to setup metering (${e.message})`);
-                logger.debug(e.stack);
+                logger.warning(`SP-EUC01 failed to setup metering (${e.message})`, NS);
+                logger.debug(e.stack, NS);
             }
         },
         onEvent: async (type, data, device) => {
@@ -1687,7 +1652,7 @@ const definitions: Definition[] = [
             e.gas(), e.tamper(), e.enum('sensitivity', ea.STATE_SET, ['low', 'medium', 'high']),
             e.numeric('gas_density', ea.STATE), e.enum('selftest', ea.SET, ['']),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Mains (single phase)';
             device.type = 'Router';
             device.save();
@@ -1725,7 +1690,7 @@ const definitions: Definition[] = [
             e.binary('state', ea.STATE_GET, 'preparation', 'work').withDescription('"Preparation" or "work" ' +
                 '(measurement of the gas concentration value and triggering of an alarm are only performed in the "work" state)'),
             e.power_outage_count().withAccess(ea.STATE_GET)],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.write('manuSpecificLumi', {0x014b: {value: 1, type: 0x20}}, {manufacturerCode: manufacturerCode});
             await endpoint.read('manuSpecificLumi', [0x013a], {manufacturerCode: manufacturerCode});
@@ -1770,7 +1735,7 @@ const definitions: Definition[] = [
             e.binary('linkage_alarm_state', ea.STATE, true, false).withDescription('"linkage_alarm" is triggered'),
             e.battery(), e.battery_voltage(), e.power_outage_count(false)],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.write('manuSpecificLumi', {0x014b: {value: 1, type: 0x20}}, {manufacturerCode: manufacturerCode});
             await endpoint.read('genPowerCfg', ['batteryVoltage']);
@@ -1813,10 +1778,15 @@ const definitions: Definition[] = [
         model: 'DJT12LM',
         vendor: 'Aqara',
         description: 'Vibration sensor T1',
-        fromZigbee: [lumi.fromZigbee.lumi_vibration],
-        exposes: [e.action(['vibration'])],
-        toZigbee: [],
-        extend: [quirkCheckinInterval('1_HOUR'), lumiZigbeeOTA()],
+        extend: [
+            lumiVibration(),
+            // Doesn't seem to be working at all
+            // https://github.com/Koenkk/zigbee2mqtt/issues/21731
+            // lumiMiscellaneous(),
+            battery({voltageToPercentage: '3V_2850_3000', voltage: true}),
+            lumiZigbeeOTA(),
+            quirkCheckinInterval('1_HOUR'),
+        ],
     },
     {
         zigbeeModel: ['lumi.curtain'],
@@ -1883,7 +1853,7 @@ const definitions: Definition[] = [
         exposes: [e.cover_position().setAccess('state', ea.ALL), e.battery(),
             e.binary('running', ea.STATE, true, false)
                 .withDescription('Whether the motor is moving or not'),
-            e.enum('motor_state', ea.STATE, ['closing', 'opening', 'stop'])
+            e.enum('motor_state', ea.STATE, ['closing', 'opening', 'stopped'])
                 .withDescription('The current state of the motor.'), e.power_outage_count()],
         extend: [lumiZigbeeOTA()],
     },
@@ -1892,20 +1862,26 @@ const definitions: Definition[] = [
         model: 'ZNCLDJ14LM',
         vendor: 'Aqara',
         description: 'Curtain controller C2',
-        fromZigbee: [lumi.fromZigbee.lumi_basic, lumi.fromZigbee.lumi_curtain_position,
-            lumi.fromZigbee.lumi_curtain_position_tilt, lumi.fromZigbee.lumi_curtain_status],
-        toZigbee: [lumi.toZigbee.lumi_curtain_position_state, lumi.toZigbee.lumi_curtain_options],
-        onEvent: async (type, data, device) => {
-            // The position (genAnalogOutput.presentValue) reported via an attribute contains an invalid value
-            // however when reading it will provide the correct value.
-            if (data.type === 'attributeReport' && data.cluster === 'genAnalogOutput') {
-                await device.endpoints[0].read('genAnalogOutput', ['presentValue']);
-            }
-        },
+        fromZigbee: [
+            lumi.fromZigbee.lumi_basic,
+            lumi.fromZigbee.lumi_curtain_position,
+            lumi.fromZigbee.lumi_curtain_status,
+            lumi.fromZigbee.lumi_curtain_options,
+        ],
+        toZigbee: [
+            lumi.toZigbee.lumi_curtain_position_state,
+            lumi.toZigbee.lumi_curtain_hand_open,
+            lumi.toZigbee.lumi_curtain_reverse,
+            lumi.toZigbee.lumi_curtain_limits_calibration_ZNCLDJ14LM,
+        ],
         exposes: [e.cover_position().setAccess('state', ea.ALL),
+            e.binary('reverse_direction', ea.ALL, true, false)
+                .withDescription('Whether the curtain direction is inverted'),
+            e.binary('hand_open', ea.ALL, true, false)
+                .withDescription('Pulling curtains by hand starts the motor'),
             e.binary('running', ea.STATE, true, false)
                 .withDescription('Whether the motor is moving or not'),
-            e.enum('motor_state', ea.STATE, ['closing', 'opening', 'stop'])
+            e.enum('motor_state', ea.STATE, ['closing', 'opening', 'stopped'])
                 .withDescription('The current state of the motor.'), e.power_outage_count()],
         extend: [lumiZigbeeOTA()],
     },
@@ -1930,17 +1906,23 @@ const definitions: Definition[] = [
         exposes: [e.cover_position().setAccess('state', ea.ALL), e.battery().withAccess(ea.STATE_GET), e.device_temperature(),
             e.binary('charging_status', ea.STATE_GET, true, false)
                 .withDescription('The current charging status.'),
-            e.enum('motor_state', ea.STATE, ['declining', 'rising', 'pause', 'blocked'])
+            e.enum('motor_state', ea.STATE, ['closing', 'opening', 'stopped', 'blocked'])
                 .withDescription('The current state of the motor.'),
             e.binary('running', ea.STATE, true, false)
                 .withDescription('Whether the motor is moving or not')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Battery';
             device.save();
             const endpoint = device.getEndpoint(1);
             await endpoint.read('manuSpecificLumi', [0x040a], {manufacturerCode: manufacturerCode});
         },
         extend: [
+            quirkAddEndpointCluster({
+                endpointID: 1,
+                inputClusters: [
+                    'manuSpecificLumi',
+                ],
+            }),
             lumiZigbeeOTA(),
             lumiMotorSpeed(),
         ],
@@ -1988,7 +1970,7 @@ const definitions: Definition[] = [
             e.enum('power_source', ea.STATE_GET, ['battery', 'dc_source']).withDescription('The current power source'),
             e.binary('charging', ea.STATE_GET, true, false).withDescription('The current charging state'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             // Read correct version to replace version advertised by `genBasic` and `genOta`:
             // https://github.com/Koenkk/zigbee2mqtt/issues/15745
@@ -2019,7 +2001,7 @@ const definitions: Definition[] = [
                 .withDescription('Enabling prevents both relais being on at the same time'),
         ],
         extend: [lumiZigbeeOTA()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
@@ -2032,7 +2014,7 @@ const definitions: Definition[] = [
         description: 'Dual relay module T2',
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power],
         toZigbee: [tz.on_off],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: (device) => {
             return {'l1': 1, 'l2': 2};
         },
@@ -2092,7 +2074,7 @@ const definitions: Definition[] = [
             ]),
         ],
         meta: {battery: {voltageToPercentage: '4LR6AA1_5v'}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.save();
@@ -2116,7 +2098,7 @@ const definitions: Definition[] = [
             ]),
         ],
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             // Device advertises itself as Router but is an EndDevice
             device.type = 'EndDevice';
             device.save();
@@ -2155,7 +2137,7 @@ const definitions: Definition[] = [
         toZigbee: [lumi.toZigbee.lumi_operation_mode_opple],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode});
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genPowerCfg']);
@@ -2179,7 +2161,7 @@ const definitions: Definition[] = [
         toZigbee: [lumi.toZigbee.lumi_operation_mode_opple],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode});
             await reporting.bind(endpoint, coordinatorEndpoint, [
@@ -2209,7 +2191,7 @@ const definitions: Definition[] = [
         toZigbee: [lumi.toZigbee.lumi_operation_mode_opple],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode});
             await reporting.bind(endpoint, coordinatorEndpoint, [
@@ -2227,7 +2209,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.illuminance],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['msIlluminanceMeasurement']);
             await reporting.illuminance(endpoint, {min: 15, max: constants.repInterval.HOUR, change: 500});
@@ -2241,7 +2223,40 @@ const definitions: Definition[] = [
         model: 'TDL01LM',
         vendor: 'Aqara',
         description: 'Spotlight T3',
-        extend: [light({colorTemp: {range: undefined}, color: true}), lumiZigbeeOTA()],
+        whiteLabel: [
+            {vendor: 'Aqara', model: 'MZSD11LM'},
+            {vendor: 'Aqara', model: 'MZSD12LM'},
+            {vendor: 'Aqara', model: 'MZTD11LM'},
+        ],
+        extend: [
+            lumiZigbeeOTA(),
+            lumiLight({
+                colorTemp: true,
+                color: false,
+                powerOutageMemory: 'enum',
+                levelConfig: {disabledFeatures: ['current_level_startup']},
+            }),
+            numeric({
+                name: 'min_brightness',
+                valueMin: 0,
+                valueMax: 99,
+                unit: '%',
+                cluster: 'manuSpecificLumi',
+                attribute: {ID: 0x0515, type: 0x20},
+                description: 'Minimum brightness level',
+                zigbeeCommandOptions: {manufacturerCode},
+            }),
+            numeric({
+                name: 'max_brightness',
+                valueMin: 1,
+                valueMax: 100,
+                unit: '%',
+                cluster: 'manuSpecificLumi',
+                attribute: {ID: 0x0516, type: 0x20},
+                description: 'Maximum brightness level',
+                zigbeeCommandOptions: {manufacturerCode},
+            }),
+        ],
     },
     {
         zigbeeModel: ['lumi.light.rgbac1'],
@@ -2262,21 +2277,21 @@ const definitions: Definition[] = [
         model: 'SSWQD02LM',
         vendor: 'Aqara',
         description: 'Smart dimmer controller T1 Pro',
-        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true})],
+        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.dimmer.acn004'],
         model: 'ZNDDQDQ12LM',
         vendor: 'Aqara',
         description: 'T1 light strip controller',
-        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true})],
+        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.light.acn026', 'lumi.light.acn024'],
         model: 'SSWQD03LM',
         vendor: 'Aqara',
         description: 'Spotlight T2',
-        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true})],
+        extend: [lumiZigbeeOTA(), lumiLight({colorTemp: true, powerOutageMemory: 'switch'})],
     },
     {
         zigbeeModel: ['lumi.switch.n0agl1'],
@@ -2290,7 +2305,7 @@ const definitions: Definition[] = [
             e.switch_type(), e.voltage(), e.current(),
         ],
         toZigbee: [lumi.toZigbee.lumi_switch_type, tz.on_off, lumi.toZigbee.lumi_switch_power_outage_memory, lumi.toZigbee.lumi_led_disabled_night],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genDeviceTempCfg']);
             await reporting.onOff(endpoint);
@@ -2311,7 +2326,7 @@ const definitions: Definition[] = [
             lumi.toZigbee.lumi_switch_power_outage_memory, lumi.toZigbee.lumi_led_disabled_night],
         exposes: [e.switch(), e.power().withAccess(ea.STATE_GET), e.energy(), e.device_temperature().withAccess(ea.STATE),
             e.voltage(), e.current(), e.power_outage_memory(), e.led_disabled_night(), e.switch_type()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
             device.powerSource = 'Mains (single phase)';
             device.save();
@@ -2326,7 +2341,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_specific],
         exposes: [e.switch(), e.power_outage_memory(), e.switch_type(), e.power_outage_count(), e.device_temperature()],
         toZigbee: [lumi.toZigbee.lumi_switch_type, tz.on_off, lumi.toZigbee.lumi_switch_power_outage_memory],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await reporting.onOff(endpoint);
@@ -2342,7 +2357,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_specific],
         exposes: [e.switch(), e.power_outage_memory(), e.switch_type()],
         toZigbee: [lumi.toZigbee.lumi_switch_type, tz.on_off, lumi.toZigbee.lumi_switch_power_outage_memory],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await reporting.onOff(endpoint);
@@ -2395,7 +2410,7 @@ const definitions: Definition[] = [
                     .withDescription('Icon'))
                 .withFeature(e.text('switch_3_text', ea.STATE_SET)
                     .withDescription('Text'))],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ['genOnOff']);
             await reporting.bind(device.getEndpoint(2), coordinatorEndpoint, ['genOnOff']);
             await reporting.bind(device.getEndpoint(3), coordinatorEndpoint, ['genOnOff']);
@@ -2438,7 +2453,7 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['command', 'event'])
                 .withDescription('Operation mode, select "command" to enable bindings (wake up the device before changing modes!)'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             const endpoint2 = device.getEndpoint(3);
             // set "event" mode
@@ -2468,11 +2483,10 @@ const definitions: Definition[] = [
             e.enum('mode_switch', ea.ALL, ['anti_flicker_mode', 'quick_mode'])
                 .withDescription('Anti flicker mode can be used to solve blinking issues of some lights.' +
                     'Quick mode makes the device respond faster.')],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.b2lc04'],
@@ -2500,11 +2514,10 @@ const definitions: Definition[] = [
             e.action(['single_left', 'double_left', 'single_right', 'double_right', 'single_both', 'double_both']),
             e.power_outage_memory(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.airmonitor.acn01'],
@@ -2534,7 +2547,7 @@ const definitions: Definition[] = [
             lumiOutageCountRestoreBindReporting(),
             lumiZigbeeOTA(),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genPowerCfg'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -2564,11 +2577,10 @@ const definitions: Definition[] = [
             e.action(['single_left', 'double_left', 'single_right', 'double_right', 'single_both', 'double_both']),
             e.power_outage_memory(), e.device_temperature(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.plug.macn01'],
@@ -2594,23 +2606,25 @@ const definitions: Definition[] = [
             lumi.toZigbee.lumi_flip_indicator_light],
         exposes: [e.switch(), e.action(['single', 'double']), e.power_outage_memory(), e.device_temperature(), e.flip_indicator_light(),
             e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled']).withDescription('Decoupled mode')],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.remote.b1acn02'],
         model: 'WXKG13LM',
         vendor: 'Aqara',
         description: 'Wireless mini switch T1',
-        whiteLabel: [{vendor: 'Aqara', model: 'WB-R02D'}],
+        whiteLabel: [
+            {vendor: 'Aqara', model: 'WB-R02D'},
+            {vendor: 'Yandex', model: 'YNDX-00524'},
+        ],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         fromZigbee: [fz.battery, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific],
         toZigbee: [],
         exposes: [e.battery(), e.battery_voltage(), e.action(['single', 'double', 'triple', 'quintuple', 'hold', 'release', 'many'])],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
@@ -2627,7 +2641,7 @@ const definitions: Definition[] = [
         exposes: [e.battery(), e.battery_voltage(), e.illuminance(), e.illuminance_lux(),
             e.numeric('detection_period', exposes.access.ALL).withValueMin(1).withValueMax(59).withUnit('s')
                 .withDescription('Time interval in seconds to report after light changes')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
             await endpoint.read('manuSpecificLumi', [0x0000], {manufacturerCode: manufacturerCode});
@@ -2642,7 +2656,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_power, lumi.fromZigbee.lumi_specific],
         toZigbee: [tz.on_off, lumi.toZigbee.lumi_switch_power_outage_memory, lumi.toZigbee.lumi_led_disabled_night,
             lumi.toZigbee.lumi_button_switch_mode, lumi.toZigbee.lumi_overload_protection, lumi.toZigbee.lumi_socket_button_lock],
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         endpoint: () => {
             return {'relay': 1, 'usb': 2};
         },
@@ -2660,7 +2674,10 @@ const definitions: Definition[] = [
         model: 'MCCGQ12LM',
         vendor: 'Aqara',
         description: 'Door and window sensor T1',
-        whiteLabel: [{vendor: 'Aqara', model: 'DW-S03D'}],
+        whiteLabel: [
+            {vendor: 'Aqara', model: 'DW-S03D'},
+            {vendor: 'Yandex', model: 'YNDX-00520'},
+        ],
         fromZigbee: [lumi.fromZigbee.lumi_contact, lumi.fromZigbee.lumi_specific, fz.ias_contact_alarm_1],
         toZigbee: [],
         exposes: [e.contact(), e.battery(), e.battery_voltage()],
@@ -2687,26 +2704,22 @@ const definitions: Definition[] = [
         model: 'ZNXNKG02LM',
         vendor: 'Aqara',
         description: 'Smart rotary knob H1 (wireless)',
-        meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        extend: [quirkCheckinInterval('1_HOUR')],
-        exposes: [e.battery(), e.battery_voltage(),
-            e.action(['single', 'double', 'hold', 'release', 'start_rotating', 'rotation', 'stop_rotating']),
-            e.enum('operation_mode', ea.ALL, ['event', 'command']).withDescription('Button mode'),
-            e.enum('action_rotation_button_state', ea.STATE, ['released', 'pressed']).withDescription('Button state during rotation'),
-            e.numeric('action_rotation_angle', ea.STATE).withUnit('*').withDescription('Rotation angle'),
-            e.numeric('action_rotation_angle_speed', ea.STATE).withUnit('*').withDescription('Rotation angle speed'),
-            e.numeric('action_rotation_percent', ea.STATE).withUnit('%').withDescription('Rotation percent'),
-            e.numeric('action_rotation_percent_speed', ea.STATE).withUnit('%').withDescription('Rotation percent speed'),
-            e.numeric('action_rotation_time', ea.STATE).withUnit('ms').withDescription('Rotation time'),
+        extend: [
+            quirkCheckinInterval('1_HOUR'),
+            lumiPreventReset(),
+            lumiCommandMode(),
+            lumiAction({actionLookup: {'hold': 0, 'single': 1, 'double': 2, 'release': 255}}),
+            lumiBattery({voltageToPercentage: '3V_2850_3000'}),
+            lumiKnobRotation(),
+            enumLookup({
+                name: 'sensitivity',
+                lookup: {'low': 720, 'medium': 360, 'high': 180},
+                cluster: 'manuSpecificLumi',
+                attribute: {ID: 0x0234, type: 0x21},
+                description: 'Rotation sensitivity',
+                zigbeeCommandOptions: {manufacturerCode},
+            }),
         ],
-        fromZigbee: [lumi.fromZigbee.lumi_action, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_basic,
-            lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_knob_rotation],
-        toZigbee: [lumi.toZigbee.lumi_operation_mode_opple],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
-            const endpoint1 = device.getEndpoint(1);
-            await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
-        },
     },
     {
         zigbeeModel: ['lumi.remote.acn003'],
@@ -2721,7 +2734,7 @@ const definitions: Definition[] = [
             e.enum('click_mode', ea.ALL, ['fast', 'multi'])
                 .withDescription('Click mode, fast: only supports single click which will be send immediately after clicking.' +
                     'multi: supports more events like double and hold')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {0x0125: {value: 0x02, type: 0x20}}, {manufacturerCode: manufacturerCode});
         },
     },
@@ -2731,7 +2744,7 @@ const definitions: Definition[] = [
         vendor: 'Aqara',
         description: 'Wireless remote switch E1 (double rocker)',
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
-        extend: [quirkCheckinInterval('1_HOUR')],
+        extend: [quirkCheckinInterval('1_HOUR'), lumiPreventReset()],
         exposes: [e.battery(), e.battery_voltage(),
             e.action(['single_left', 'single_right', 'single_both', 'double_left', 'double_right', 'hold_left', 'hold_right']),
             // eslint-disable-next-line max-len
@@ -2739,8 +2752,7 @@ const definitions: Definition[] = [
         ],
         fromZigbee: [lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific],
         toZigbee: [lumi.toZigbee.lumi_switch_click_mode],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             // set multiclick mode
             await endpoint1.write('manuSpecificLumi', {0x0125: {value: 0x02, type: 0x20}}, {manufacturerCode: manufacturerCode});
@@ -2761,7 +2773,7 @@ const definitions: Definition[] = [
                 .withDescription('Operation mode, select "command" to enable bindings (wake up the device before changing modes!)')],
         meta: {battery: {voltageToPercentage: '3V_2850_3000'}},
         extend: [quirkCheckinInterval('1_HOUR')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             await endpoint1.write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
             await endpoint1.read('manuSpecificLumi', [0x0125], {manufacturerCode: manufacturerCode});
@@ -2797,7 +2809,7 @@ const definitions: Definition[] = [
             e.schedule_settings()
                 .withDescription('Smart schedule configuration (default: mon,tue,wed,thu,fri|8:00,24.0|18:00,17.0|23:00,22.0|8:00,22.0)'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
 
             // Initialize battery percentage and voltage
@@ -2839,7 +2851,7 @@ const definitions: Definition[] = [
                 .withUnit('g'),
         ],
         extend: [lumiZigbeeOTA()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('manuSpecificLumi', [0xfff1], {manufacturerCode: manufacturerCode});
             device.powerSource = 'Mains (single phase)';
@@ -2879,7 +2891,7 @@ const definitions: Definition[] = [
             e.enum('operation_mode', ea.ALL, ['command', 'event'])
                 .withDescription('Operation mode, select "command" to enable bindings (wake up the device before changing modes!)'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             const endpoint2 = device.getEndpoint(3);
             // set "event" mode
@@ -2917,166 +2929,199 @@ const definitions: Definition[] = [
         model: 'ZNQBKG38LM',
         vendor: 'Aqara',
         description: 'Smart wall switch Z1 (single rocker)',
-        fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power],
-        toZigbee: [
-            tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_opple, lumi.toZigbee.lumi_switch_power_outage_memory,
-            lumi.toZigbee.lumi_led_disabled_night, lumi.toZigbee.lumi_switch_lock_relay_opple,
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            lumiOnOff({operationMode: true, powerOutageMemory: 'enum', lockRelay: true}),
+            lumiAction(),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiLedDisabledNight(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSetEventMode(),
         ],
-        meta: {multiEndpoint: true},
-        endpoint: (device) => {
-            return {'button': 1};
-        },
-        exposes: [
-            e.power(), e.voltage(), e.device_temperature(),
-            e.switch().withEndpoint('button'),
-
-            e.enum('power_outage_memory', ea.ALL, ['on', 'electric_appliances_on', 'electric_appliances_off', 'inverted'])
-                .withDescription('Power Outage Memory').withEndpoint('button'),
-            e.led_disabled_night(),
-
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode').withEndpoint('button'),
-
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode').withEndpoint('button'),
-
-            e.action(['single']),
-        ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
-        },
-        extend: [lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.switch.acn049'],
         model: 'ZNQBKG39LM',
         vendor: 'Aqara',
         description: 'Smart wall switch Z1 (double rocker)',
-        fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power],
-        toZigbee: [
-            tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_opple, lumi.toZigbee.lumi_switch_power_outage_memory,
-            lumi.toZigbee.lumi_led_disabled_night, lumi.toZigbee.lumi_switch_lock_relay_opple,
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'bottom': 2}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'bottom'],
+            }),
+            lumiAction({endpointNames: ['top', 'bottom']}),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiLedDisabledNight(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSetEventMode(),
         ],
-        meta: {multiEndpoint: true},
-        endpoint: (device) => {
-            return {'top': 1, 'bottom': 2};
-        },
-        exposes: [
-            e.power(), e.voltage(), e.device_temperature(),
-            e.switch().withEndpoint('top'), e.switch().withEndpoint('bottom'),
-
-            e.enum('power_outage_memory', ea.ALL, ['on', 'electric_appliances_on', 'electric_appliances_off', 'inverted'])
-                .withDescription('Power Outage Memory'),
-            e.led_disabled_night(),
-
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for top button').withEndpoint('top'),
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for bottom button').withEndpoint('bottom'),
-
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for top button').withEndpoint('top'),
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for bottom button').withEndpoint('bottom'),
-
-            e.action(['single_top', 'single_bottom']),
-        ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
-        },
-        extend: [lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.switch.acn054'],
         model: 'ZNQBKG40LM',
         vendor: 'Aqara',
         description: 'Smart wall switch Z1 (triple rocker)',
-        fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power],
-        toZigbee: [
-            tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_opple, lumi.toZigbee.lumi_switch_power_outage_memory,
-            lumi.toZigbee.lumi_led_disabled_night, lumi.toZigbee.lumi_switch_lock_relay_opple,
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'center': 2, 'bottom': 3}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'center', 'bottom']}),
+            lumiAction({endpointNames: ['top', 'center', 'bottom']}),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiLedDisabledNight(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSetEventMode(),
         ],
-        meta: {multiEndpoint: true},
-        endpoint: (device) => {
-            return {'top': 1, 'center': 2, 'bottom': 3};
-        },
-        exposes: [
-            e.power(), e.voltage(), e.device_temperature(),
-            e.switch().withEndpoint('top'), e.switch().withEndpoint('center'), e.switch().withEndpoint('bottom'),
-            e.enum('power_outage_memory', ea.ALL, ['on', 'electric_appliances_on', 'electric_appliances_off', 'inverted'])
-                .withDescription('Power Outage Memory'),
-            e.led_disabled_night(),
-
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for top button').withEndpoint('top'),
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for center button').withEndpoint('center'),
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for bottom button').withEndpoint('bottom'),
-
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for top button').withEndpoint('top'),
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for center button').withEndpoint('center'),
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for bottom button').withEndpoint('bottom'),
-
-            e.action(['single_top', 'single_center', 'single_bottom']),
-        ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
-        },
-        extend: [lumiZigbeeOTA()],
     },
     {
         zigbeeModel: ['lumi.switch.acn055'],
         model: 'ZNQBKG41LM',
         vendor: 'Aqara',
         description: 'Smart wall switch Z1 (quadruple rocker)',
-        fromZigbee: [fz.on_off, lumi.fromZigbee.lumi_action_multistate, lumi.fromZigbee.lumi_specific, lumi.fromZigbee.lumi_power],
-        toZigbee: [
-            tz.on_off, lumi.toZigbee.lumi_switch_operation_mode_opple, lumi.toZigbee.lumi_switch_power_outage_memory,
-            lumi.toZigbee.lumi_led_disabled_night, lumi.toZigbee.lumi_switch_lock_relay_opple, lumi.toZigbee.lumi_switch_click_mode,
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'center': 2, 'bottom': 3, 'wireless': 4}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'center', 'bottom'],
+            }),
+            lumiAction({
+                actionLookup: {'hold': 0, 'single': 1, 'double': 2, 'release': 255},
+                endpointNames: ['top', 'center', 'bottom', 'wireless']}),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiLedDisabledNight(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSetEventMode(),
         ],
-        meta: {multiEndpoint: true},
-        endpoint: (device) => {
-            return {'top': 1, 'center': 2, 'bottom': 3, 'wireless': 4};
-        },
-        exposes: [
-            e.power(), e.voltage(), e.device_temperature(),
-            e.switch().withEndpoint('top'), e.switch().withEndpoint('center'), e.switch().withEndpoint('bottom'),
-            e.enum('power_outage_memory', ea.ALL, ['on', 'electric_appliances_on', 'electric_appliances_off', 'inverted'])
-                .withDescription('Power Outage Memory'),
-            e.led_disabled_night(),
-
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for top button').withEndpoint('top'),
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for center button').withEndpoint('center'),
-            e.enum('operation_mode', ea.ALL, ['control_relay', 'decoupled'])
-                .withDescription('Decoupled mode for bottom button').withEndpoint('bottom'),
-
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for top button').withEndpoint('top'),
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for center button').withEndpoint('center'),
-            e.binary('lock_relay', ea.ALL, true, false)
-                .withDescription('Lock relay mode for bottom button').withEndpoint('bottom'),
-
-            e.enum('click_mode', ea.ALL, ['fast', 'multi'])
-                .withDescription('Click mode(Wireless button only), fast: only supports single click which will be send immediately after clicking.' +
-                    'multi: supports more events like double and hold'),
-            e.action(['single_top', 'single_center', 'single_bottom',
-                'hold_wireless', 'single_wireless', 'double_wireless', 'release_wireless']),
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn056'],
+        model: 'ZNQBKG42LM',
+        vendor: 'Aqara',
+        description: 'Smart wall switch Z1 Pro (single rocker)',
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            lumiOnOff({operationMode: true, powerOutageMemory: 'enum', lockRelay: true}),
+            lumiAction({extraActions: ['slider_single', 'slider_double', 'slider_hold', 'slider_up', 'slider_down']}),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSlider(),
+            lumiSwitchMode(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
-        },
-        extend: [lumiZigbeeOTA()],
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn057'],
+        model: 'ZNQBKG43LM',
+        vendor: 'Aqara',
+        description: 'Smart wall switch Z1 Pro (double rocker)',
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'bottom': 2}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'bottom'],
+            }),
+            lumiAction({
+                endpointNames: ['top', 'bottom'],
+                extraActions: ['slider_single', 'slider_double', 'slider_hold', 'slider_up', 'slider_down'],
+            }),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSlider(),
+            lumiSwitchMode(),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn058'],
+        model: 'ZNQBKG44LM',
+        vendor: 'Aqara',
+        description: 'Smart wall switch Z1 Pro (triple rocker)',
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'center': 2, 'bottom': 3}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'center', 'bottom']}),
+            lumiAction({
+                endpointNames: ['top', 'center', 'bottom'],
+                extraActions: ['slider_single', 'slider_double', 'slider_hold', 'slider_up', 'slider_down'],
+            }),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSlider(),
+            lumiSwitchMode(),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn059'],
+        model: 'ZNQBKG45LM',
+        vendor: 'Aqara',
+        description: 'Smart wall switch Z1 Pro (quadruple rocker)',
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'top': 1, 'center': 2, 'bottom': 3, 'wireless': 4}}),
+            lumiOnOff({
+                operationMode: true,
+                powerOutageMemory: 'enum',
+                lockRelay: true,
+                endpointNames: ['top', 'center', 'bottom'],
+            }),
+            lumiAction({
+                actionLookup: {'hold': 0, 'single': 1, 'double': 2, 'release': 255},
+                endpointNames: ['top', 'center', 'bottom', 'wireless'],
+                extraActions: ['slider_single', 'slider_double', 'slider_hold', 'slider_up', 'slider_down'],
+            }),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiClickMode({attribute: {ID: 0x0286, type: 0x20}}),
+            lumiSlider(),
+            lumiSwitchMode(),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.switch.acn061'],
+        model: 'WS-K01D',
+        vendor: 'Aqara',
+        description: 'Smart wall switch H1 20A (with neutral, single rocker)',
+        extend: [
+            lumiZigbeeOTA(),
+            lumiPreventReset(),
+            lumiOnOff({operationMode: true, powerOutageMemory: 'binary'}),
+            lumiAction({actionLookup: {'single': 1, 'double': 2}}),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiLedDisabledNight(),
+            lumiSetEventMode(),
+            lumiFlipIndicatorLight(),
+        ],
     },
     {
         zigbeeModel: ['lumi.remote.cagl02'],
@@ -3108,7 +3153,7 @@ const definitions: Definition[] = [
             e.cube_side('action_from_side'),
             e.angle('action_angle'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.softwareBuildID = `0.0.0_00${device.applicationVersion}`;
             device.save();
 
@@ -3148,11 +3193,10 @@ const definitions: Definition[] = [
                 'single_center_right', 'double_center_right', 'single_all', 'double_all']),
             e.power_outage_memory(), e.device_temperature(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.acn029'],
@@ -3171,8 +3215,7 @@ const definitions: Definition[] = [
                 .withDescription('Decoupled mode'),
             e.power_outage_memory(), e.led_disabled_night(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.acn030'],
@@ -3187,7 +3230,7 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'left': 1, 'right': 2};
         },
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         exposes: [
             e.power(), e.energy(), e.voltage(),
             e.switch().withEndpoint('left'), e.switch().withEndpoint('right'),
@@ -3201,11 +3244,10 @@ const definitions: Definition[] = [
                 'single_left_right', 'double_left_right', 'single_all', 'double_all']),
             e.power_outage_memory(), e.led_disabled_night(), e.device_temperature(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.switch.acn031'],
@@ -3220,7 +3262,7 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'left': 1, 'center': 2, 'right': 3};
         },
-        meta: {multiEndpoint: true},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy']},
         exposes: [
             e.power(), e.energy(), e.voltage(),
             e.switch().withEndpoint('left'), e.switch().withEndpoint('center'), e.switch().withEndpoint('right'),
@@ -3238,11 +3280,10 @@ const definitions: Definition[] = [
                 'single_center_right', 'double_center_right', 'single_all', 'double_all']),
             e.power_outage_memory(), e.led_disabled_night(), e.device_temperature(), e.flip_indicator_light(),
         ],
-        onEvent: preventReset,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
         },
-        extend: [lumiZigbeeOTA()],
+        extend: [lumiZigbeeOTA(), lumiPreventReset()],
     },
     {
         zigbeeModel: ['lumi.plug.aeu001'],
@@ -3279,6 +3320,47 @@ const definitions: Definition[] = [
                 access: 'ALL',
                 zigbeeCommandOptions: {manufacturerCode},
             }),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.light.acn031'],
+        model: 'HCXDD12LM',
+        vendor: 'Aqara',
+        description: 'Ceiling light T1',
+        extend: [
+            deviceEndpoints({endpoints: {'white': 1, 'rgb': 2}}),
+            lumiLight({colorTemp: true, powerOutageMemory: 'light', endpointNames: ['white']}),
+            lumiLight({colorTemp: true, deviceTemperature: false, powerOutageCount: false, color: {modes: ['xy', 'hs']}, endpointNames: ['rgb']}),
+            lumiZigbeeOTA(),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.light.acn032'],
+        model: 'CL-L02D',
+        vendor: 'Aqara',
+        description: 'Ceiling light T1M',
+        extend: [
+            deviceEndpoints({endpoints: {'white': 1, 'rgb': 2}}),
+            lumiLight({colorTemp: true, endpointNames: ['white']}),
+            lumiLight({colorTemp: true, deviceTemperature: false, powerOutageCount: false, color: {modes: ['xy', 'hs']}, endpointNames: ['rgb']}),
+            lumiZigbeeOTA(),
+        ],
+    },
+    {
+        zigbeeModel: ['lumi.switch.rkna01'],
+        model: 'ZNXNKG01LM',
+        vendor: 'Aqara',
+        description: 'Smart rotary knob H1 (with neutral)',
+        extend: [
+            lumiPreventReset(),
+            deviceEndpoints({endpoints: {'left': 1, 'center': 2, 'right': 3}}),
+            lumiOnOff({powerOutageMemory: 'binary', endpointNames: ['left', 'center', 'right']}),
+            lumiCommandMode(),
+            lumiAction({actionLookup: {'hold': 0, 'single': 1, 'double': 2, 'release': 255}}),
+            lumiKnobRotation(),
+            lumiElectricityMeter(),
+            lumiPower(),
+            lumiZigbeeOTA(),
         ],
     },
 ];

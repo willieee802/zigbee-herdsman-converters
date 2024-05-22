@@ -3,7 +3,7 @@ import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import tz from '../converters/toZigbee';
 import * as reporting from '../lib/reporting';
-import extend from '../lib/extend';
+import {electricityMeter, light} from '../lib/modernExtend';
 const e = exposes.presets;
 
 const definitions: Definition[] = [
@@ -12,24 +12,11 @@ const definitions: Definition[] = [
         model: 'VES-ZB-DIM-004',
         vendor: 'Vesternet',
         description: 'Zigbee dimmer',
-        fromZigbee: extend.light_onoff_brightness().fromZigbee
-            .concat([fz.electrical_measurement, fz.metering, fz.ignore_genOta]),
-        toZigbee: extend.light_onoff_brightness().toZigbee.concat([tz.power_on_behavior]),
-        exposes: [e.light_brightness().withLevelConfig(['on_transition_time', 'off_transition_time']),
-            e.power(), e.voltage(), e.current(), e.energy(), e.power_on_behavior(['off', 'on', 'previous'])],
+        extend: [
+            light({configureReporting: true, levelConfig: {disabledFeatures: ['on_transition_time', 'off_transition_time']}}),
+            electricityMeter(),
+        ],
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9040A'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
-            const endpoint = device.getEndpoint(1);
-            await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'haElectricalMeasurement', 'seMetering']);
-            await reporting.onOff(endpoint);
-            await reporting.brightness(endpoint);
-            await reporting.readEletricalMeasurementMultiplierDivisors(endpoint);
-            await reporting.activePower(endpoint);
-            await reporting.rmsCurrent(endpoint, {min: 10, change: 10});
-            await reporting.rmsVoltage(endpoint, {min: 10});
-            await reporting.readMeteringMultiplierDivisor(endpoint);
-            await reporting.currentSummDelivered(endpoint);
-        },
     },
     {
         fingerprint: [{modelID: 'ON/OFF -M', softwareBuildID: '2.9.2_r54'}],
@@ -40,7 +27,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.on_off, tz.power_on_behavior],
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy(), e.power_on_behavior(['off', 'on', 'previous'])],
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9101SAC-HP-SWITCH-B'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await reporting.onOff(endpoint);
@@ -62,7 +49,7 @@ const definitions: Definition[] = [
         exposes: [e.cover_position()],
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9080A'}],
         meta: {coverInverted: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['closuresWindowCovering']);
             await reporting.currentPositionLiftPercentage(endpoint);
@@ -84,7 +71,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         meta: {multiEndpoint: true, battery: {dontDividePercentage: true}, publishDuplicateTransaction: true},
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9001K12-DIM-Z4'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genScenes', 'genPowerCfg']);
             await reporting.bind(device.getEndpoint(2), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genScenes']);
             await reporting.bind(device.getEndpoint(3), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genScenes']);
@@ -101,7 +88,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.on_off, tz.power_on_behavior],
         exposes: [e.switch(), e.power_on_behavior(['off', 'on', 'previous'])],
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9100A-S'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
             await reporting.onOff(endpoint);
@@ -120,8 +107,8 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'l1': 1, 'l2': 2};
         },
-        meta: {multiEndpoint: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy', 'current', 'voltage']},
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             const endpoint2 = device.getEndpoint(2);
             await reporting.bind(endpoint1, coordinatorEndpoint, ['genOnOff']);
@@ -160,7 +147,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         meta: {multiEndpoint: true, battery: {dontDividePercentage: true}},
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9001K2-DIM2'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genPowerCfg']);
             await reporting.batteryPercentageRemaining(device.getEndpoint(1));
         },
@@ -177,7 +164,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         meta: {multiEndpoint: true, battery: {dontDividePercentage: true}},
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9001K4-DIM2'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genPowerCfg']);
             await reporting.bind(device.getEndpoint(2), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl']);
             await reporting.batteryPercentageRemaining(device.getEndpoint(1));
@@ -197,7 +184,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         meta: {multiEndpoint: true, battery: {dontDividePercentage: true}},
         whiteLabel: [{vendor: 'Sunricher', model: 'SR-ZG9001K8-DIM'}],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl', 'genPowerCfg']);
             await reporting.bind(device.getEndpoint(2), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl']);
             await reporting.bind(device.getEndpoint(3), coordinatorEndpoint, ['genOnOff', 'genLevelCtrl']);

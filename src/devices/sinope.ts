@@ -1,3 +1,4 @@
+import {Zcl} from 'zigbee-herdsman';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import * as legacy from '../lib/legacy';
@@ -5,14 +6,13 @@ import tz from '../converters/toZigbee';
 import * as constants from '../lib/constants';
 import * as utils from '../lib/utils';
 import * as reporting from '../lib/reporting';
-import extend from '../lib/extend';
 import {Definition, Fz, KeyValue, KeyValueAny, Tz} from '../lib/types';
 const e = exposes.presets;
 const ea = exposes.access;
 import {precisionRound} from '../lib/utils';
-import {onOff, electricityMeter} from '../lib/modernExtend';
+import {onOff, electricityMeter, light} from '../lib/modernExtend';
 
-const manuSinope = {manufacturerCode: 0x119C};
+const manuSinope = {manufacturerCode: Zcl.ManufacturerCode.SINOPE_TECHNOLOGIES};
 
 const fzLocal = {
     ias_water_leak_alarm: {
@@ -643,7 +643,7 @@ const definitions: Definition[] = [
             e.power().withAccess(ea.STATE_GET), e.current(), e.voltage(), e.energy(),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat', 'hvacUserInterfaceCfg',
@@ -719,7 +719,7 @@ const definitions: Definition[] = [
             e.power().withAccess(ea.STATE_GET), e.current(), e.voltage(), e.energy(),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat', 'hvacUserInterfaceCfg',
@@ -795,7 +795,7 @@ const definitions: Definition[] = [
             e.power().withAccess(ea.STATE_GET), e.current(), e.voltage(), e.energy(),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat', 'hvacUserInterfaceCfg',
@@ -877,7 +877,7 @@ const definitions: Definition[] = [
             e.power().withAccess(ea.STATE_GET), e.current(), e.voltage(), e.energy(),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat', 'hvacUserInterfaceCfg',
@@ -959,7 +959,7 @@ const definitions: Definition[] = [
             e.enum('keypad_lockout', ea.ALL, ['unlock', 'lock1'])
                 .withDescription('Enables or disables the device’s buttons'),
             e.power().withAccess(ea.STATE_GET), e.current(), e.voltage(), e.energy()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat', 'hvacUserInterfaceCfg',
@@ -1077,7 +1077,7 @@ const definitions: Definition[] = [
                 .withDescription('The power in watts of the heater connected to the auxiliary output of the thermostat'),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups', 'hvacThermostat',
@@ -1142,7 +1142,7 @@ const definitions: Definition[] = [
                 .withDescription('Enables or disables the device’s buttons'),
         ],
 
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = [
                 'genBasic', 'genIdentify', 'genGroups',
@@ -1186,7 +1186,7 @@ const definitions: Definition[] = [
                 .withDescription('Load connected in watt'),
             e.energy(),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genOnOff', 'manuSpecificSinope', 'seMetering'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -1209,10 +1209,11 @@ const definitions: Definition[] = [
         model: 'DM2500ZB',
         vendor: 'Sinopé',
         description: 'Zigbee smart dimmer',
-        fromZigbee: [fz.on_off, fz.brightness, fz.electrical_measurement, fzLocal.sinope],
-        toZigbee: [tz.light_onoff_brightness, tzLocal.timer_seconds, tzLocal.led_intensity_on, tzLocal.led_intensity_off,
+        extend: [light({configureReporting: true})],
+        fromZigbee: [fzLocal.sinope],
+        toZigbee: [tzLocal.timer_seconds, tzLocal.led_intensity_on, tzLocal.led_intensity_off,
             tzLocal.minimum_brightness, tzLocal.led_color_on, tzLocal.led_color_off],
-        exposes: [e.light_brightness(),
+        exposes: [
             e.numeric('timer_seconds', ea.ALL).withUnit('s').withValueMin(0).withValueMax(65535)
                 .withPreset('Disabled', 0, 'disabled').withDescription('Automatically turn off load after x seconds'),
             e.numeric('led_intensity_on', ea.ALL).withUnit('%').withValueMin(0).withValueMax(100)
@@ -1231,24 +1232,17 @@ const definitions: Definition[] = [
                 .withFeature(e.numeric('g', ea.SET))
                 .withFeature(e.numeric('b', ea.SET))
                 .withDescription('Control status LED color when load OFF')],
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await extend.light_onoff_brightness().configure(device, coordinatorEndpoint, logger);
-            const endpoint = device.getEndpoint(1);
-            const binds = ['genBasic', 'genLevelCtrl'];
-            await reporting.bind(endpoint, coordinatorEndpoint, binds);
-            await reporting.onOff(endpoint);
-            await reporting.brightness(endpoint);
-        },
     },
     {
         zigbeeModel: ['DM2550ZB'],
         model: 'DM2550ZB',
         vendor: 'Sinopé',
         description: 'Zigbee Adaptive phase smart dimmer',
-        fromZigbee: [fz.on_off, fz.brightness, fz.electrical_measurement, fzLocal.sinope],
-        toZigbee: [tz.light_onoff_brightness, tzLocal.timer_seconds, tzLocal.led_intensity_on, tzLocal.led_intensity_off,
+        extend: [light({configureReporting: true})],
+        fromZigbee: [fzLocal.sinope],
+        toZigbee: [tzLocal.timer_seconds, tzLocal.led_intensity_on, tzLocal.led_intensity_off,
             tzLocal.minimum_brightness, tzLocal.led_color_on, tzLocal.led_color_off],
-        exposes: [e.light_brightness(),
+        exposes: [
             e.numeric('timer_seconds', ea.ALL).withUnit('s').withValueMin(0).withValueMax(65535)
                 .withPreset('Disabled', 0, 'disabled').withDescription('Automatically turn off load after x seconds'),
             e.numeric('led_intensity_on', ea.ALL).withUnit('%').withValueMin(0).withValueMax(100)
@@ -1267,14 +1261,6 @@ const definitions: Definition[] = [
                 .withFeature(e.numeric('g', ea.SET))
                 .withFeature(e.numeric('b', ea.SET))
                 .withDescription('Control status LED color when load OFF')],
-        configure: async (device, coordinatorEndpoint, logger) => {
-            await extend.light_onoff_brightness().configure(device, coordinatorEndpoint, logger);
-            const endpoint = device.getEndpoint(1);
-            const binds = ['genBasic', 'genLevelCtrl'];
-            await reporting.bind(endpoint, coordinatorEndpoint, binds);
-            await reporting.onOff(endpoint);
-            await reporting.brightness(endpoint);
-        },
     },
     {
         zigbeeModel: ['SP2600ZB'],
@@ -1284,7 +1270,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.electrical_measurement, fz.metering],
         toZigbee: [tz.on_off, tz.frequency],
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genBasic', 'genIdentify', 'genOnOff', 'haElectricalMeasurement', 'seMetering'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -1305,7 +1291,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.electrical_measurement, fz.metering],
         toZigbee: [tz.on_off, tz.frequency],
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genBasic', 'genIdentify', 'genOnOff', 'haElectricalMeasurement', 'seMetering'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -1482,7 +1468,7 @@ const definitions: Definition[] = [
         exposes: [e.battery_low(), e.battery(), e.temperature(),
             e.numeric('tank_level', ea.STATE).withUnit('%').withValueMin(0).withValueMax(100)
                 .withDescription('Percent volume remaining in tank')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genPowerCfg', 'msTemperatureMeasurement', 'genAnalogInput'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);

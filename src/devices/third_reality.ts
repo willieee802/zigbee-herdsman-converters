@@ -2,11 +2,10 @@ import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
 import tz from '../converters/toZigbee';
 import * as reporting from '../lib/reporting';
-import extend from '../lib/extend';
 import * as ota from '../lib/ota';
 import {Definition, Fz, KeyValue} from '../lib/types';
-import {forcePowerSource, light, onOff} from '../lib/modernExtend';
-import {temperature, humidity, batteryPercentage} from '../lib/modernExtend';
+import {forcePowerSource, iasZoneAlarm, light, onOff} from '../lib/modernExtend';
+import {temperature, humidity, battery} from '../lib/modernExtend';
 
 const e = exposes.presets;
 
@@ -23,7 +22,8 @@ const fzLocal = {
         },
     } satisfies Fz.Converter,
     thirdreality_private_motion_sensor: {
-        cluster: 'manuSpecificUbisysDeviceSetup',
+        cluster: 'manuSpecificAssaDoorLock',
+        // This cluster ID is 0xFC00. Temporarily modify like this
         type: 'attributeReport',
         convert: (model, msg, publish, options, meta) => {
             const zoneStatus = msg.data[2];
@@ -42,7 +42,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.battery],
         toZigbee: [tz.on_off, tz.ignore_transition],
         exposes: [e.switch(), e.battery(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
@@ -64,13 +64,8 @@ const definitions: Definition[] = [
         model: '3RSS007Z',
         vendor: 'Third Reality',
         description: 'Smart light switch',
-        extend: extend.switch(),
+        extend: [onOff()],
         meta: {disableDefaultResponse: true},
-        configure: async (device, coordinatorEndpoint, logger) => {
-            const endpoint = device.getEndpoint(1);
-            await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff']);
-            await reporting.onOff(endpoint);
-        },
     },
     {
         zigbeeModel: ['3RSL011Z'],
@@ -95,7 +90,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         ota: ota.zigbeeOTA,
         exposes: [e.water_leak(), e.battery_low(), e.battery(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
@@ -111,7 +106,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         ota: ota.zigbeeOTA,
         exposes: [e.occupancy(), e.battery_low(), e.battery(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
@@ -127,12 +122,20 @@ const definitions: Definition[] = [
         toZigbee: [],
         ota: ota.zigbeeOTA,
         exposes: [e.contact(), e.battery_low(), e.battery(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
             device.save();
         },
+    },
+    {
+        zigbeeModel: ['3RDTS01056Z'],
+        model: '3RDTS01056Z',
+        vendor: 'Third Reality',
+        description: 'Garage door tilt sensor',
+        extend: [battery(), iasZoneAlarm({zoneType: 'contact', zoneAttributes: ['alarm_1', 'battery_low']})],
+        ota: ota.zigbeeOTA,
     },
     {
         zigbeeModel: ['3RSP019BZ'],
@@ -151,7 +154,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.cover_state, tz.cover_position_tilt],
         meta: {battery: {dontDividePercentage: false}},
         ota: ota.zigbeeOTA,
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genPowerCfg', 'closuresWindowCovering']);
             await reporting.currentPositionLiftPercentage(endpoint);
@@ -180,7 +183,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         ota: ota.zigbeeOTA,
         exposes: [e.battery(), e.battery_low(), e.battery_voltage(), e.action(['single', 'double', 'long'])],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
@@ -192,18 +195,18 @@ const definitions: Definition[] = [
         model: '3RTHS24BZ',
         vendor: 'Third Reality',
         description: 'Temperature and humidity sensor',
-        fromZigbee: [fz.battery, fz.temperature, fz.humidity],
+        fromZigbee: [fz.temperature, fz.humidity],
         toZigbee: [],
-        exposes: [e.temperature(), e.humidity(), e.battery_voltage()],
-        extend: [batteryPercentage(), forcePowerSource({powerSource: 'Battery'})],
+        exposes: [e.temperature(), e.humidity()],
+        extend: [battery({voltage: true}), forcePowerSource({powerSource: 'Battery'})],
         ota: ota.zigbeeOTA,
     },
     {
         zigbeeModel: ['3RTHS0224Z'],
         model: '3RTHS0224Z',
         vendor: 'Third Reality',
-        description: 'Temperature and humidity sensor v2',
-        extend: [temperature(), humidity(), batteryPercentage(), forcePowerSource({powerSource: 'Battery'})],
+        description: 'Temperature and humidity sensor lite',
+        extend: [temperature(), humidity(), battery(), forcePowerSource({powerSource: 'Battery'})],
         ota: ota.zigbeeOTA,
     },
     {
@@ -215,7 +218,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.on_off, tz.power_on_behavior],
         ota: ota.zigbeeOTA,
         exposes: [e.switch(), e.power_on_behavior(), e.ac_frequency(), e.power(), e.power_factor(), e.energy(), e.current(), e.voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await endpoint.read('haElectricalMeasurement', ['acPowerMultiplier', 'acPowerDivisor']);
@@ -241,7 +244,7 @@ const definitions: Definition[] = [
         toZigbee: [],
         ota: ota.zigbeeOTA,
         exposes: [e.vibration(), e.battery_low(), e.battery(), e.battery_voltage(), e.x_axis(), e.y_axis(), e.z_axis()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await endpoint.read('genPowerCfg', ['batteryPercentageRemaining']);
             device.powerSource = 'Battery';
@@ -254,12 +257,10 @@ const definitions: Definition[] = [
         vendor: 'Third Reality',
         description: 'Zigbee multi-function night light',
         ota: ota.zigbeeOTA,
-        fromZigbee: extend.light_onoff_brightness_colortemp_color().fromZigbee.concat([
-            fzLocal.thirdreality_private_motion_sensor, fz.illuminance, fz.ias_occupancy_alarm_1_report]),
-        toZigbee: extend.light_onoff_brightness_colortemp_color().toZigbee,
-        exposes: [e.light_brightness_colorxy(),
-            e.occupancy(), e.illuminance(), e.illuminance_lux().withUnit('lx')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [light({color: true})],
+        fromZigbee: [fzLocal.thirdreality_private_motion_sensor, fz.illuminance, fz.ias_occupancy_alarm_1_report],
+        exposes: [e.occupancy(), e.illuminance(), e.illuminance_lux().withUnit('lx')],
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Mains (single phase)';
             device.save();
         },
@@ -273,7 +274,7 @@ const definitions: Definition[] = [
         toZigbee: [tz.on_off, tz.power_on_behavior],
         ota: ota.zigbeeOTA,
         exposes: [e.switch(), e.power_on_behavior(), e.ac_frequency(), e.power(), e.power_factor(), e.energy(), e.current(), e.voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'haElectricalMeasurement', 'seMetering']);
             await endpoint.read('haElectricalMeasurement', ['acPowerMultiplier', 'acPowerDivisor']);

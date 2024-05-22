@@ -9,6 +9,10 @@ import * as constants from '../lib/constants';
 import {Zcl} from '@willieee802/zigbee-herdsman';
 import {Definition, Fz, OnEventType, Tz, OnEventData, Zh, KeyValue, KeyValueAny} from '../lib/types';
 import {ubisysModernExtend} from '../lib/ubisys';
+import * as semver from 'semver';
+import {logger} from '../lib/logger';
+
+const NS = 'zhc:ubisys';
 const e = exposes.presets;
 const ea = exposes.access;
 
@@ -18,7 +22,7 @@ const manufacturerOptions = {
      * This bug has been reported, but it has not been fixed:
      * https://github.com/Koenkk/zigbee-herdsman/issues/52
      */
-    ubisys: {manufacturerCode: Zcl.ManufacturerCode.UBISYS},
+    ubisys: {manufacturerCode: Zcl.ManufacturerCode.UBISYS_TECHNOLOGIES_GMBH},
     // @ts-expect-error
     ubisysNull: {manufacturerCode: null},
 };
@@ -108,7 +112,7 @@ const ubisys = {
             key: ['configure_j1'],
             convertSet: async (entity, key, value: KeyValueAny, meta) => {
                 const log = (message: string) => {
-                    meta.logger.warn(`ubisys: ${message}`);
+                    logger.warning(`ubisys: ${message}`, NS);
                 };
                 const sleepSeconds = async (s: number) => {
                     return new Promise((resolve) => setTimeout(resolve, s * 1000));
@@ -230,7 +234,7 @@ const ubisys = {
             },
             convertGet: async (entity, key, meta) => {
                 const log = (json: unknown) => {
-                    meta.logger.warn(`ubisys: Cover configuration read: ${JSON.stringify(json)}`);
+                    logger.warning(`ubisys: Cover configuration read: ${JSON.stringify(json)}`, NS);
                 };
                 log(await entity.read('closuresWindowCovering', [
                     'windowCoveringType',
@@ -307,23 +311,68 @@ const ubisys = {
             key: ['configure_device_setup'],
             convertSet: async (entity, key, value: KeyValueAny, meta) => {
                 const devMgmtEp = meta.device.getEndpoint(232);
+                const cluster = Zcl.Utils.getCluster('manuSpecificUbisysDeviceSetup', null, meta.device.customClusters);
+                const attributeInputConfigurations = cluster.getAttribute('inputConfigurations');
+                const attributeInputActions = cluster.getAttribute('inputActions');
+
+                // ubisys switched to writeStructure a while ago, change log only goes back to 1.9.x
+                // and it happened before that but to be safe we will only use writeStrucutre on 1.9.0 and up
+                let useWriteStruct = false;
+                if (meta.device.softwareBuildID != undefined) {
+                    useWriteStruct = semver.gte(meta.device.softwareBuildID, '1.9.0', true);
+                }
+                if (useWriteStruct) {
+                    logger.debug(`ubisys: using writeStructure for '${meta.options.friendly_name}'.`, NS);
+                }
 
                 if (value.hasOwnProperty('input_configurations')) {
                     // example: [0, 0, 0, 0]
-                    await devMgmtEp.write(
-                        'manuSpecificUbisysDeviceSetup',
-                        {'inputConfigurations': {elementType: 'data8', elements: value.input_configurations}},
-                        manufacturerOptions.ubisysNull,
-                    );
+                    if (useWriteStruct) {
+                        await devMgmtEp.writeStructured(
+                            'manuSpecificUbisysDeviceSetup',
+                            [{
+                                attrId: attributeInputConfigurations.ID,
+                                selector: {},
+                                dataType: Zcl.DataType.ARRAY,
+                                elementData: {
+                                    elementType: 'data8',
+                                    elements: value.input_configurations,
+                                },
+                            }],
+                            manufacturerOptions.ubisysNull,
+                        );
+                    } else {
+                        await devMgmtEp.write(
+                            'manuSpecificUbisysDeviceSetup',
+                            {[attributeInputConfigurations.name]: {elementType: 'data8', elements: value.input_configurations}},
+                            manufacturerOptions.ubisysNull,
+                        );
+                    }
                 }
 
                 if (value.hasOwnProperty('input_actions')) {
                     // example (default for C4): [[0,13,1,6,0,2], [1,13,2,6,0,2], [2,13,3,6,0,2], [3,13,4,6,0,2]]
-                    await devMgmtEp.write(
-                        'manuSpecificUbisysDeviceSetup',
-                        {'inputActions': {elementType: 'octetStr', elements: value.input_actions}},
-                        manufacturerOptions.ubisysNull,
-                    );
+                    if (useWriteStruct) {
+                        await devMgmtEp.writeStructured(
+                            'manuSpecificUbisysDeviceSetup',
+                            [{
+                                attrId: attributeInputActions.ID,
+                                selector: {},
+                                dataType: Zcl.DataType.ARRAY,
+                                elementData: {
+                                    elementType: 'octetStr',
+                                    elements: value.input_actions,
+                                },
+                            }],
+                            manufacturerOptions.ubisysNull,
+                        );
+                    } else {
+                        await devMgmtEp.write(
+                            'manuSpecificUbisysDeviceSetup',
+                            {[attributeInputActions.name]: {elementType: 'octetStr', elements: value.input_actions}},
+                            manufacturerOptions.ubisysNull,
+                        );
+                    }
                 }
 
                 if (value.hasOwnProperty('input_action_templates')) {
@@ -498,19 +547,35 @@ const ubisys = {
                         }
                         resultingInputActions = resultingInputActions.concat(inputActions);
 
-                        meta.logger.warn(`ubisys: Using input(s) ${input} and endpoint ${endpoint} for '${template.type}'.`);
+                        logger.warning(`ubisys: Using input(s) ${input} and endpoint ${endpoint} for '${template.type}'.`, NS);
                         // input might by now be an array (in case of double inputs)
                         input = (Array.isArray(input) ? Math.max(...input) : input) + 1;
                         endpoint += 1;
                     }
 
-                    meta.logger.debug(`ubisys: input_actions to be sent to '${meta.options.friendly_name}': ` +
-                        JSON.stringify(resultingInputActions));
-                    await devMgmtEp.write(
-                        'manuSpecificUbisysDeviceSetup',
-                        {'inputActions': {elementType: 'octetStr', elements: resultingInputActions}},
-                        manufacturerOptions.ubisysNull,
-                    );
+                    logger.debug(`ubisys: input_actions to be sent to '${meta.options.friendly_name}': ` +
+                        JSON.stringify(resultingInputActions), NS);
+                    if (useWriteStruct) {
+                        await devMgmtEp.writeStructured(
+                            'manuSpecificUbisysDeviceSetup',
+                            [{
+                                attrId: attributeInputActions.ID,
+                                selector: {},
+                                dataType: Zcl.DataType.ARRAY,
+                                elementData: {
+                                    elementType: 'octetStr',
+                                    elements: resultingInputActions,
+                                },
+                            }],
+                            manufacturerOptions.ubisysNull,
+                        );
+                    } else {
+                        await devMgmtEp.write(
+                            'manuSpecificUbisysDeviceSetup',
+                            {[attributeInputActions.name]: {elementType: 'octetStr', elements: resultingInputActions}},
+                            manufacturerOptions.ubisysNull,
+                        );
+                    }
                 }
 
                 // re-read effective settings and dump them to the log
@@ -551,7 +616,10 @@ const definitions: Definition[] = [
             return {'l1': 1, 's1': 2, 'meter': 3};
         },
         meta: {multiEndpointEnforce: {'power': 3, 'energy': 3}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(3);
             await reporting.bind(endpoint, coordinatorEndpoint, ['seMetering']);
             await reporting.readMeteringMultiplierDivisor(endpoint);
@@ -600,7 +668,10 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'l1': 1, 's1': 2, 'meter': 4};
         },
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(4);
             await reporting.bind(endpoint, coordinatorEndpoint, ['seMetering']);
             await reporting.readMeteringMultiplierDivisor(endpoint);
@@ -649,8 +720,11 @@ const definitions: Definition[] = [
         endpoint: (device) => {
             return {'l1': 1, 'l2': 2, 's1': 3, 's2': 4, 'meter': 5};
         },
-        meta: {multiEndpoint: true, multiEndpointEnforce: {'power': 5, 'energy': 5}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        meta: {multiEndpoint: true, multiEndpointSkip: ['power', 'energy'], multiEndpointEnforce: {'power': 5, 'energy': 5}},
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(5);
             await reporting.bind(endpoint, coordinatorEndpoint, ['seMetering']);
             await reporting.readMeteringMultiplierDivisor(endpoint);
@@ -754,13 +828,18 @@ const definitions: Definition[] = [
                 .withDescription('The dimmer\'s reactance discriminator had detected an inductive load.'),
             e.enum('mode_phase_control', ea.ALL, ['automatic', 'forward', 'reverse'])
                 .withDescription('Configures the dimming technique.')],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDimmerSetup(),
+            ubisysModernExtend.addCustomClusterGenLevelCtrl(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(4);
             await reporting.bind(endpoint, coordinatorEndpoint, ['seMetering']);
             await reporting.readMeteringMultiplierDivisor(endpoint);
             await reporting.instantaneousDemand(endpoint);
         },
-        meta: {multiEndpoint: true, multiEndpointSkip: ['state', 'brightness'], multiEndpointEnforce: {'power': 4, 'energy': 4}},
+        meta: {multiEndpoint: true, multiEndpointSkip: ['state', 'brightness', 'power', 'energy'], multiEndpointEnforce: {'power': 4, 'energy': 4}},
         endpoint: (device) => {
             return {'default': 1, 's1': 2, 's2': 3, 'meter': 4};
         },
@@ -820,7 +899,11 @@ const definitions: Definition[] = [
                 e.linkquality(),
             ];
         },
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+            ubisysModernExtend.addCustomClusterClosuresWindowCovering(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint1 = device.getEndpoint(1);
             const endpoint3 = device.getEndpoint(3);
             await reporting.bind(endpoint3, coordinatorEndpoint, ['seMetering']);
@@ -869,7 +952,10 @@ const definitions: Definition[] = [
                 'cover_open_s6', 'cover_close_s6', 'cover_stop_s6',
             ]),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterManuSpecificUbisysDeviceSetup(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             for (const ep of [1, 2, 3, 4]) {
                 await reporting.bind(device.getEndpoint(ep), coordinatorEndpoint, ['genScenes', 'genOnOff', 'genLevelCtrl']);
             }
@@ -909,12 +995,13 @@ const definitions: Definition[] = [
                 .withWeeklySchedule(['heat']),
         ],
         extend: [
+            ubisysModernExtend.addCustomClusterHvacThermostat(),
             ubisysModernExtend.vacationMode(),
             ubisysModernExtend.localTemperatureOffset(),
             ubisysModernExtend.occupiedHeatingSetpointDefault(),
             ubisysModernExtend.remoteTemperatureDuration(),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const binds = ['genBasic', 'genPowerCfg', 'genTime', 'hvacThermostat'];
             await reporting.bind(endpoint, coordinatorEndpoint, binds);
@@ -979,7 +1066,11 @@ const definitions: Definition[] = [
             e.switch().withEndpoint('l7'), e.switch().withEndpoint('l8'),
             e.switch().withEndpoint('l9'), e.switch().withEndpoint('l10'),
         ],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        extend: [
+            ubisysModernExtend.addCustomClusterHvacThermostat(),
+            ubisysModernExtend.addCustomClusterGenLevelCtrl(),
+        ],
+        configure: async (device, coordinatorEndpoint) => {
             // setup ep 11-20 as on/off switches
             const heaterCoolerBinds = ['genOnOff'];
             for (let ep = 11; ep <= 20; ep++) {

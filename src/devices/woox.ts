@@ -26,7 +26,7 @@ const definitions: Definition[] = [
         model: 'R9077',
         vendor: 'Woox',
         description: 'RGB+CCT LED',
-        extend: tuya.extend.light_onoff_brightness_colortemp_color(),
+        extend: [tuya.modernExtend.tuyaLight({colorTemp: {range: undefined}, color: true})],
         meta: {applyRedFix: true},
     },
     {
@@ -37,7 +37,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.battery, fz.temperature, fz.humidity],
         toZigbee: [],
         exposes: [e.battery(), e.temperature(), e.humidity(), e.battery_voltage()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             const bindClusters = ['msTemperatureMeasurement', 'msRelativeHumidity', 'genPowerCfg'];
             await reporting.bind(endpoint, coordinatorEndpoint, bindClusters);

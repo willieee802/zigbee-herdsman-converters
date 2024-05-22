@@ -1,3 +1,4 @@
+import {Zcl} from 'zigbee-herdsman';
 import {Definition} from '../lib/types';
 import * as exposes from '../lib/exposes';
 import fz from '../converters/fromZigbee';
@@ -17,11 +18,11 @@ const definitions: Definition[] = [
         fromZigbee: [fz.command_on, legacy.fz.genOnOff_cmdOn, fz.command_off, legacy.fz.genOnOff_cmdOff, fz.on_off, fz.meazon_meter],
         exposes: [e.switch(), e.power(), e.voltage(), e.current(), e.energy()],
         toZigbee: [tz.on_off],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(10);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'seMetering']);
             await reporting.onOff(endpoint, {min: 1, max: 0xfffe});
-            const options = {manufacturerCode: 4406, disableDefaultResponse: false};
+            const options = {manufacturerCode: Zcl.ManufacturerCode.MEAZON_S_A, disableDefaultResponse: false};
             await endpoint.write('seMetering', {0x1005: {value: 0x063e, type: 25}}, options);
             await endpoint.configureReporting('seMetering', [{reportableChange: 1, attribute: {ID: 0x2000, type: 0x29},
                 minimumReportInterval: 1, maximumReportInterval: constants.repInterval.MINUTES_5}], options);
@@ -35,11 +36,11 @@ const definitions: Definition[] = [
         fromZigbee: [fz.command_on, legacy.fz.genOnOff_cmdOn, fz.command_off, legacy.fz.genOnOff_cmdOff, fz.on_off, fz.meazon_meter],
         exposes: [e.switch(), e.power(), e.voltage(), e.current()],
         toZigbee: [tz.on_off],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(10);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genOnOff', 'seMetering']);
             await reporting.onOff(endpoint);
-            const options = {manufacturerCode: 4406, disableDefaultResponse: false};
+            const options = {manufacturerCode: Zcl.ManufacturerCode.MEAZON_S_A, disableDefaultResponse: false};
             await endpoint.write('seMetering', {0x1005: {value: 0x063e, type: 25}}, options);
             await reporting.onOff(endpoint);
             await endpoint.configureReporting('seMetering', [{attribute: {ID: 0x2000, type: 0x29},

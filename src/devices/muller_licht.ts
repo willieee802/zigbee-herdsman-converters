@@ -110,8 +110,8 @@ const definitions: Definition[] = [
         model: '404062',
         vendor: 'Müller Licht',
         description: 'Kea RGB+CCT',
-        extend: tuya.extend.light_onoff_brightness_colortemp_color(
-            {colorTempRange: [153, 500], toZigbee: [tz.tint_scene, tuya.tz.do_not_disturb, tuya.tz.color_power_on_behavior]}),
+        toZigbee: [tz.tint_scene],
+        extend: [tuya.modernExtend.tuyaLight({colorTemp: {range: [153, 500]}, color: true})],
     },
     {
         fingerprint: [{manufacturerName: '_TZ3000_bdbb0fon'}],
@@ -135,7 +135,7 @@ const definitions: Definition[] = [
         exposes: [e.action(['on', 'off', 'brightness_step_up', 'brightness_step_down', 'brightness_move_up', 'brightness_move_down',
             'brightness_stop', 'recall_1', 'store_1'])],
         toZigbee: [],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(1);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genBasic', 'genOnOff', 'genLevelCtrl', 'genScenes']);
         },
@@ -158,7 +158,7 @@ const definitions: Definition[] = [
         exposes: [e.action(['on', 'off', 'brightness_step_up', 'brightness_step_down', 'brightness_move_up', 'brightness_move_down',
             'brightness_stop', 'color_temperature_move', 'color_move', 'scene_1', 'scene_2', 'scene_3', 'scene_4', 'scene_5', 'scene_6'])],
         toZigbee: [],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             device.powerSource = 'Battery';
             device.save();
         },

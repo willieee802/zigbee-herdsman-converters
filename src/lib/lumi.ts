@@ -1,3 +1,4 @@
+import {Buffer} from 'node:buffer';
 import {
     batteryVoltageToPercentage,
     postfixWithEndpointName,
@@ -5,7 +6,6 @@ import {
     assertNumber,
     getFromLookup,
     getKey,
-    createLogger,
     printNumbersAsHexSequence,
     toNumber,
     assertEndpoint,
@@ -23,9 +23,15 @@ import {
 import * as ota from './ota';
 import fz from '../converters/fromZigbee';
 import * as globalStore from './store';
-import {Fz, Definition, KeyValue, KeyValueAny, Tz, ModernExtend, Range, KeyValueNumberString} from './types';
+import {
+    Fz, Definition, KeyValue, KeyValueAny, Tz, ModernExtend, Range,
+    KeyValueNumberString, OnEvent, Expose, Configure,
+} from './types';
 import * as modernExtend from './modernExtend';
 import * as exposes from './exposes';
+import {logger} from './logger';
+
+const NS = 'zhc:lumi';
 const legacyFromZigbeeStore: KeyValueAny = {};
 const e = exposes.presets;
 const ea = exposes.access;
@@ -42,8 +48,7 @@ export interface TrvScheduleConfig {
     events: TrvScheduleConfigEvent[];
 }
 
-
-export const buffer2DataObject = (meta: Fz.Meta, model: Definition, buffer: Buffer) => {
+export const buffer2DataObject = (model: Definition, buffer: Buffer) => {
     const dataObject: KeyValue = {};
 
     if (buffer !== null && Buffer.isBuffer(buffer)) {
@@ -147,16 +152,16 @@ export const buffer2DataObject = (meta: Fz.Meta, model: Definition, buffer: Buff
                 break;
             case 66:
                 // 0x42 unknown, length taken from what seems correct in the logs, maybe is wrong
-                if (meta.logger) meta.logger.debug(`${model.model}: unknown vtype=${buffer[i+1]}, pos=${i+1}, moving length 1`);
+                logger.debug(`${model.model}: unknown vtype=${buffer[i+1]}, pos=${i+1}, moving length 1`, NS);
                 i += 2;
                 break;
             case 95:
                 // 0x5f unknown, length taken from what seems correct in the logs, maybe is wrong
-                if (meta.logger) meta.logger.debug(`${model.model}: unknown vtype=${buffer[i+1]}, pos=${i+1}, moving length 4`);
+                logger.debug(`${model.model}: unknown vtype=${buffer[i+1]}, pos=${i+1}, moving length 4`, NS);
                 i += 5;
                 break;
             default:
-                if (meta.logger) meta.logger.debug(`${model.model}: unknown vtype=${buffer[i + 1]}, pos=${i + 1}`);
+                logger.debug(`${model.model}: unknown vtype=${buffer[i + 1]}, pos=${i + 1}`, NS);
             }
 
             if (value != null) {
@@ -165,10 +170,11 @@ export const buffer2DataObject = (meta: Fz.Meta, model: Definition, buffer: Buff
         }
     }
 
-    if (meta.logger) {
-        meta.logger.debug(`${model.model}: Processed buffer into data ${JSON.stringify(dataObject,
-            (key, value) => typeof value === 'bigint' ? value.toString() : value)}`);
-    }
+    logger.debug(
+        `${model.model}: Processed buffer into data \
+            ${JSON.stringify(dataObject, (key, value) => typeof value === 'bigint' ? value.toString() : value)}`,
+        NS,
+    );
 
 
     return dataObject;
@@ -208,7 +214,7 @@ export const numericAttributes2Payload = async (msg: Fz.Message, meta: Fz.Meta, 
             break;
         case '4':
             if (['WS-USC01', 'WS-USC02', 'WS-EUK01', 'WS-EUK02', 'QBKG27LM', 'QBKG28LM', 'QBKG29LM',
-                'QBKG25LM', 'QBKG38LM', 'QBKG39LM'].includes(model.model)) {
+                'QBKG25LM', 'QBKG38LM', 'QBKG39LM', 'ZNQBKG42LM', 'ZNQBKG43LM', 'ZNQBKG44LM', 'ZNQBKG45LM'].includes(model.model)) {
                 payload.mode_switch = getFromLookup(value, {4: 'anti_flicker_mode', 1: 'quick_mode'});
             }
             break;
@@ -426,7 +432,11 @@ export const numericAttributes2Payload = async (msg: Fz.Message, meta: Fz.Meta, 
             break;
         case '149':
             assertNumber(value);
-            payload.energy = value, options; // 0x95
+            payload.energy = value; // 0x95
+            if (['LLKZMK12LM'].includes(model.model)) {
+                assertNumber(payload.energy);
+                payload.energy = payload.energy / 1000;
+            }
             // Consumption is deprecated
             payload.consumption = payload.energy;
             break;
@@ -525,8 +535,7 @@ export const numericAttributes2Payload = async (msg: Fz.Message, meta: Fz.Meta, 
             break;
         case '247':
             {
-                // @ts-expect-error
-                const dataObject247 = buffer2DataObject(meta, model, value);
+                const dataObject247 = buffer2DataObject(model, value as Buffer);
                 if (['CTP-R01'].includes(model.model)) {
                     // execute pending soft switch of operation_mode, if exists
                     const opModeSwitchTask = globalStore.getValue(meta.device, 'opModeSwitchTask');
@@ -790,10 +799,6 @@ export const numericAttributes2Payload = async (msg: Fz.Message, meta: Fz.Meta, 
             // This is a a complete structure with attributes, like element 0 for state, element 1 for voltage...
             // At this moment we only extract what we are sure, for example, position 0 seems to be always 1 for a
             // occupancy sensor, so we ignore it at this moment
-            if (['MCCGQ01LM'].includes(model.model)) {
-                // @ts-expect-error
-                payload.contact = value[0].elmVal === 0;
-            }
             // @ts-expect-error
             payload.voltage = value[1].elmVal;
             if (model.meta && model.meta.battery && model.meta.battery.voltageToPercentage) {
@@ -820,13 +825,38 @@ export const numericAttributes2Payload = async (msg: Fz.Message, meta: Fz.Meta, 
             // Use lumiAirQuality modernExtend, but we add it here to not shown an unknown key in the log
             break;
         default:
-            if (meta.logger) meta.logger.debug(`${model.model}: unknown key ${key} with value ${value}`);
+            logger.debug(`${model.model}: unknown key ${key} with value ${value}`, NS);
         }
     }
 
-    if (meta.logger) meta.logger.debug(`${model.model}: Processed data into payload ${JSON.stringify(payload)}`);
+    logger.debug(`${model.model}: Processed data into payload ${JSON.stringify(payload)}`, NS);
 
     return payload;
+};
+
+const numericAttributes2Lookup = async (model: Definition, dataObject: KeyValue) => {
+    let result: KeyValue = {};
+    for (const [key, value] of Object.entries(dataObject)) {
+        switch (key) {
+        case '247':
+            {
+                const dataObject247 = buffer2DataObject(model, value as Buffer);
+                const result247 = await numericAttributes2Lookup(model, dataObject247);
+                result = {...result, ...result247};
+            }
+            break;
+        case '65281':
+            {
+                const result65281 = await numericAttributes2Lookup(model, value as KeyValue);
+                result = {...result, ...result65281};
+            }
+            break;
+        default:
+            result[key] = value;
+        }
+    }
+
+    return result;
 };
 
 type LumiPresenceRegionZone = {x: number, y: number}
@@ -883,8 +913,7 @@ export const presence = {
     mappers: lumiPresenceMappers,
 
     encodeXCellsDefinition: (xCells?: number[]): number => {
-        // @ts-expect-error
-        if (!xCells || !xCells.size) {
+        if (!xCells?.length) {
             return 0;
         }
         return [...xCells.values()].reduce((accumulator, marker) => accumulator + presence.encodeXCellIdx(marker), 0);
@@ -1092,7 +1121,7 @@ export const trv = {
     },
 
     decodeHeartbeat(meta: Fz.Meta, model: Definition, messageBuffer: Buffer) {
-        const data = buffer2DataObject(meta, model, messageBuffer);
+        const data = buffer2DataObject(model, messageBuffer);
         const payload: KeyValue = {};
 
         Object.entries(data).forEach(([key, value]) => {
@@ -1300,15 +1329,18 @@ const manufacturerOptions = {
 };
 
 export const lumiModernExtend = {
-    lumiLight: (args?: Omit<modernExtend.LightArgs, 'colorTemp'> & {colorTemp?: true, powerOutageMemory?: 'switch' | 'light'}) => {
-        args = {powerOutageMemory: 'switch', ...args};
+    lumiLight: (args?: Omit<modernExtend.LightArgs, 'colorTemp'> & {colorTemp?: true, powerOutageMemory?: 'switch' | 'light' | 'enum',
+        deviceTemperature?: boolean, powerOutageCount?: boolean}) => {
+        args = {powerOutageCount: true, deviceTemperature: true, ...args};
         const colorTemp: {range: Range, startup: boolean} = args.colorTemp ? {startup: false, range: [153, 370]} : undefined;
         const result = modernExtend.light({effect: false, powerOnBehavior: false, ...args, colorTemp});
         result.fromZigbee.push(
             fromZigbee.lumi_bulb_interval, fz.ignore_occupancy_report, fz.ignore_humidity_report,
             fz.ignore_pressure_report, fz.ignore_temperature_report, fromZigbee.lumi_specific,
         );
-        result.exposes.push(e.device_temperature(), e.power_outage_count());
+
+        if (args.powerOutageCount) result.exposes.push(e.power_outage_count());
+        if (args.deviceTemperature) result.exposes.push(e.device_temperature());
 
         if (args.powerOutageMemory === 'switch') {
             result.toZigbee.push(toZigbee.lumi_switch_power_outage_memory);
@@ -1316,22 +1348,27 @@ export const lumiModernExtend = {
         } else if (args.powerOutageMemory === 'light') {
             result.toZigbee.push(toZigbee.lumi_light_power_outage_memory);
             result.exposes.push(e.power_outage_memory().withAccess(ea.STATE_SET));
+        } else if (args.powerOutageMemory === 'enum') {
+            const extend = lumiModernExtend.lumiPowerOnBehavior({lookup: {'on': 0, 'previous': 1, 'off': 2}});
+            result.toZigbee.push(...extend.toZigbee);
+            result.exposes.push(...extend.exposes);
         }
 
         return result;
     },
-    lumiOnOff: (args?: modernExtend.OnOffArgs & {operationMode?: boolean, powerOutageMemory?: 'binary' | 'enum'}) => {
+    lumiOnOff: (args?: modernExtend.OnOffArgs & {operationMode?: boolean, powerOutageMemory?: 'binary' | 'enum', lockRelay?: boolean}) => {
+        args = {operationMode: false, lockRelay: false, ...args};
         const result = modernExtend.onOff({powerOnBehavior: false, ...args});
         result.fromZigbee.push(fromZigbee.lumi_specific);
         result.exposes.push(e.device_temperature(), e.power_outage_count());
         if (args.powerOutageMemory === 'binary') {
             const extend = lumiModernExtend.lumiPowerOutageMemory();
-            result.toZigbee.concat(extend.toZigbee);
-            result.exposes.concat(extend.exposes);
+            result.toZigbee.push(...extend.toZigbee);
+            result.exposes.push(...extend.exposes);
         } else if (args.powerOutageMemory === 'enum') {
             const extend = lumiModernExtend.lumiPowerOnBehavior();
-            result.toZigbee.concat(extend.toZigbee);
-            result.exposes.concat(extend.exposes);
+            result.toZigbee.push(...extend.toZigbee);
+            result.exposes.push(...extend.exposes);
         }
         if (args.operationMode === true) {
             const extend = lumiModernExtend.lumiOperationMode({description: 'Decoupled mode for a button'});
@@ -1341,12 +1378,28 @@ export const lumiModernExtend = {
                         description: 'Decoupled mode for ' + ep.toString() + ' button',
                         endpointName: ep,
                     });
-                    result.toZigbee.concat(epExtend.toZigbee);
-                    result.exposes.concat(epExtend.exposes);
+                    result.toZigbee.push(...epExtend.toZigbee);
+                    result.exposes.push(...epExtend.exposes);
                 });
             } else {
-                result.toZigbee.concat(extend.toZigbee);
-                result.exposes.concat(extend.exposes);
+                result.toZigbee.push(...extend.toZigbee);
+                result.exposes.push(...extend.exposes);
+            }
+        }
+        if (args.lockRelay) {
+            const extend = lumiModernExtend.lumiLockRelay();
+            if (args.endpointNames) {
+                args.endpointNames.forEach(function(ep) {
+                    const epExtend = lumiModernExtend.lumiLockRelay({
+                        description: 'Locks ' + ep.toString() + ' relay and prevents it from operating',
+                        endpointName: ep,
+                    });
+                    result.toZigbee.push(...epExtend.toZigbee);
+                    result.exposes.push(...epExtend.exposes);
+                });
+            } else {
+                result.toZigbee.push(...extend.toZigbee);
+                result.exposes.push(...extend.exposes);
             }
         }
         return result;
@@ -1373,7 +1426,7 @@ export const lumiModernExtend = {
     }),
     lumiPowerOnBehavior: (args?: Partial<modernExtend.EnumLookupArgs>) => modernExtend.enumLookup({
         name: 'power_on_behavior',
-        lookup: {'on': 0, 'previous': 1, 'off': 2},
+        lookup: {'on': 0, 'previous': 1, 'off': 2, 'inverted': 3},
         cluster: 'manuSpecificLumi',
         attribute: {ID: 0x0517, type: 0x20},
         description: 'Controls the behavior when the device is powered on after power loss',
@@ -1455,7 +1508,7 @@ export const lumiModernExtend = {
                 //  under the manuSpecificLumi cluster as attribute 247, we simple decode and grab value with ID 5.
                 // Normal attribute publishing and decoding will be left to the classic fromZigbee or modernExtends.
                 if (msg.data.hasOwnProperty('247')) {
-                    const dataDecoded = buffer2DataObject(meta, model, msg.data['247']);
+                    const dataDecoded = buffer2DataObject(model, msg.data['247']);
                     if (dataDecoded.hasOwnProperty('5')) {
                         assertNumber(dataDecoded['5']);
 
@@ -1463,7 +1516,7 @@ export const lumiModernExtend = {
                         const previousOutageCount = meta.device?.meta?.outageCount ? meta.device.meta.outageCount : 0;
 
                         if (currentOutageCount > previousOutageCount) {
-                            meta.logger.debug('Restoring binding and reporting, device came back after losing power.');
+                            logger.debug('Restoring binding and reporting, device came back after losing power.', NS);
                             for (const endpoint of meta.device.endpoints) {
                                 // restore bindings
                                 for (const b of endpoint.binds) {
@@ -1589,6 +1642,269 @@ export const lumiModernExtend = {
         zigbeeCommandOptions: {manufacturerCode},
         ...args,
     }),
+    lumiPreventReset: (): ModernExtend => {
+        const onEvent: OnEvent = async (type, data, device) => {
+            if (
+                // options.allow_reset ||
+                type !== 'message' ||
+                data.type !== 'attributeReport' ||
+                data.cluster !== 'genBasic' ||
+                !data.data[0xfff0] ||
+                // eg: [0xaa, 0x10, 0x05, 0x41, 0x87, 0x01, 0x01, 0x10, 0x00]
+                !data.data[0xFFF0].slice(0, 5).equals(Buffer.from([0xaa, 0x10, 0x05, 0x41, 0x87]))
+            ) {
+                return;
+            }
+            const payload = {
+                [0xfff0]: {
+                    value: [0xaa, 0x10, 0x05, 0x41, 0x47, 0x01, 0x01, 0x10, 0x01],
+                    type: 0x41,
+                },
+            };
+            await device.getEndpoint(1).write('genBasic', payload, {manufacturerCode});
+        };
+        return {onEvent, isModernExtend: true};
+    },
+    lumiClickMode: (args?: Partial<modernExtend.EnumLookupArgs>) => modernExtend.enumLookup({
+        name: 'click_mode',
+        lookup: {'fast': 1, 'multi': 2},
+        cluster: 'manuSpecificLumi',
+        attribute: {ID: 0x0125, type: 0x20},
+        description: 'Click mode for wireless button. fast: only supports single click but allows faster reponse time.' +
+            'multi: supports multiple types of clicks but is slower, because it awaits multiple clicks.',
+        entityCategory: 'config',
+        zigbeeCommandOptions: {manufacturerCode},
+        ...args,
+    }),
+    lumiSlider: (): ModernExtend => {
+        const fromZigbee: Fz.Converter[] = [{
+            cluster: 'manuSpecificLumi',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                if (msg.data.hasOwnProperty(652)) {
+                    const actionLookup: KeyValueNumberString = {
+                        1: 'slider_single',
+                        2: 'slider_double',
+                        3: 'slider_hold',
+                        4: 'slider_up',
+                        5: 'slider_down',
+                    };
+                    return {
+                        action_slide_time: msg.data[561],
+                        action_slide_speed: msg.data[562],
+                        action_slide_relative_displacement: msg.data[563],
+                        action: actionLookup[msg.data[652]],
+                        action_slide_time_delta: msg.data[769],
+                    };
+                }
+            },
+        }];
+
+        const exposes: Expose[] = [
+            e.numeric('action_slide_time', ea.STATE).withUnit('ms').withCategory('diagnostic'),
+            e.numeric('action_slide_speed', ea.STATE).withUnit('mm/s').withCategory('diagnostic'),
+            e.numeric('action_slide_relative_displacement', ea.STATE).withCategory('diagnostic'),
+            e.numeric('action_slide_time_delta', ea.STATE).withUnit('ms').withCategory('diagnostic'),
+            // action is exposed from extraActions inside lumiAction
+        ];
+
+        return {fromZigbee, exposes, isModernExtend: true};
+    },
+    lumiLockRelay: (args? :Partial<modernExtend.BinaryArgs>) => modernExtend.binary({
+        name: 'lock_relay',
+        cluster: 'manuSpecificLumi',
+        attribute: {ID: 0x0285, type: 0x20},
+        valueOn: [true, 1],
+        valueOff: [false, 0],
+        description: 'Locks relay and prevents it from operating',
+        access: 'ALL',
+        entityCategory: 'config',
+        zigbeeCommandOptions: {manufacturerCode},
+        ...args,
+    }),
+    lumiSetEventMode: (): ModernExtend => {
+        // I have no idea, why it is used everywhere, even if not supported
+        // modes:
+        // 0 - 'command' mode. keys send commands. useful for binding
+        // 1 - 'event' mode. keys send events. useful for handling
+        const configure: Configure[] = [
+            async (device, coordinatorEndpoint, definition) => {
+                await device.getEndpoint(1).write('manuSpecificLumi', {'mode': 1}, {manufacturerCode: manufacturerCode, disableResponse: true});
+            },
+        ];
+        return {configure, isModernExtend: true};
+    },
+    lumiSwitchMode: (args?: Partial<modernExtend.EnumLookupArgs>) => modernExtend.enumLookup({
+        name: 'mode_switch',
+        lookup: {'quick_mode': 1, 'anti_flicker_mode': 4},
+        cluster: 'manuSpecificLumi',
+        attribute: {ID: 0x0004, type: 0x21},
+        description: 'Anti flicker mode can be used to solve blinking issues of some lights.' +
+            'Quick mode makes the device respond faster.',
+        entityCategory: 'config',
+        zigbeeCommandOptions: {manufacturerCode},
+        ...args,
+    }),
+    lumiVibration: (): ModernExtend => {
+        const exposes: Expose[] = [e.action(['shake', 'triple_strike'])];
+
+        const fromZigbee: Fz.Converter[] = [{
+            cluster: 'ssIasZone',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                if (msg.data.hasOwnProperty(45)) {
+                    const zoneStatus = msg.data[45];
+                    const actionLookup: KeyValueNumberString = {1: 'shake', 2: 'triple_strike'};
+                    return {action: actionLookup[zoneStatus]};
+                }
+            },
+        }];
+
+        return {exposes, fromZigbee, isModernExtend: true};
+    },
+    lumiMiscellaneous: (args?: {
+        cluster: 'genBasic' | 'manuSpecificLumi',
+        deviceTemperatureAttribute?: number,
+        powerOutageCountAttribute?: number,
+        resetsWhenPairing?: boolean,
+    }): ModernExtend => {
+        args = {cluster: 'manuSpecificLumi', deviceTemperatureAttribute: 3, powerOutageCountAttribute: 5, resetsWhenPairing: false, ...args};
+        const exposes: Expose[] = [e.device_temperature(), e.power_outage_count(args.resetsWhenPairing)];
+
+        const fromZigbee: Fz.Converter[] = [
+            {
+                cluster: args.cluster,
+                type: ['attributeReport', 'readResponse'],
+                convert: (model, msg, publish, options, meta) => {
+                    const payload: KeyValueAny = {};
+                    if (msg.data.hasOwnProperty(args.deviceTemperatureAttribute)) {
+                        const value = msg.data[args.deviceTemperatureAttribute];
+                        assertNumber(value);
+                        payload['device_temperature'] = value;
+                    }
+                    if (msg.data.hasOwnProperty(args.powerOutageCountAttribute)) {
+                        const value = msg.data[args.powerOutageCountAttribute];
+                        assertNumber(value);
+                        payload['power_outage_count'] = value - 1;
+                    }
+                    return payload;
+                },
+            },
+        ];
+
+        return {exposes, fromZigbee, isModernExtend: true};
+    },
+    lumiKnobRotation: (): ModernExtend => {
+        const exposes: Expose[] = [
+            e.action(['start_rotating', 'rotation', 'stop_rotating']),
+            e.enum('action_rotation_button_state', ea.STATE, ['released', 'pressed'])
+                .withDescription('Button state during rotation').withCategory('diagnostic'),
+            e.numeric('action_rotation_angle', ea.STATE)
+                .withUnit('*').withDescription('Rotation angle').withCategory('diagnostic'),
+            e.numeric('action_rotation_angle_speed', ea.STATE)
+                .withUnit('*').withDescription('Rotation angle speed').withCategory('diagnostic'),
+            e.numeric('action_rotation_percent', ea.STATE).withUnit('%')
+                .withDescription('Rotation percent').withCategory('diagnostic'),
+            e.numeric('action_rotation_percent_speed', ea.STATE)
+                .withUnit('%').withDescription('Rotation percent speed').withCategory('diagnostic'),
+            e.numeric('action_rotation_time', ea.STATE)
+                .withUnit('ms').withDescription('Rotation time').withCategory('diagnostic'),
+        ];
+
+        const fromZigbee: Fz.Converter[] = [{
+            cluster: 'manuSpecificLumi',
+            type: ['attributeReport', 'readResponse'],
+            convert: (model, msg, publish, options, meta) => {
+                if (msg.data.hasOwnProperty(570)) {
+                    const act: KeyValueNumberString = {1: 'start_rotating', 2: 'rotation', 3: 'stop_rotating'};
+                    const state: KeyValueNumberString = {0: 'released', 128: 'pressed'};
+                    return {
+                        action: act[msg.data[570] & ~128],
+                        action_rotation_button_state: state[msg.data[570] & 128],
+                        action_rotation_angle: msg.data[558],
+                        action_rotation_angle_speed: msg.data[560],
+                        action_rotation_percent: msg.data[563],
+                        action_rotation_percent_speed: msg.data[562],
+                        action_rotation_time: msg.data[561],
+                    };
+                }
+            },
+        }];
+
+        return {exposes, fromZigbee, isModernExtend: true};
+    },
+    lumiCommandMode: (args?: {setEventMode: boolean}): ModernExtend => {
+        args = {setEventMode: true, ...args};
+        const exposes: Expose[] = [
+            e.enum('operation_mode', ea.ALL, ['event', 'command'])
+                .withDescription('Command mode is usefull for binding. Event mode is usefull for processing.'),
+        ];
+
+        const toZigbee: Tz.Converter[] = [{
+            key: ['operation_mode'],
+            convertSet: async (entity, key, value, meta) => {
+                assertString(value);
+                // modes:
+                // 0 - 'command' mode. keys send commands. useful for binding
+                // 1 - 'event' mode. keys send events. useful for handling
+                const lookup = {command: 0, event: 1};
+                const endpoint = meta.device.getEndpoint(1);
+                await endpoint.write('manuSpecificLumi', {'mode': getFromLookup(value.toLowerCase(), lookup)},
+                    {manufacturerCode: manufacturerOptions.lumi.manufacturerCode});
+                return {state: {operation_mode: value.toLowerCase()}};
+            },
+            convertGet: async (entity, key, meta) => {
+                const endpoint = meta.device.getEndpoint(1);
+                await endpoint.read('manuSpecificLumi', ['mode'], {manufacturerCode: manufacturerOptions.lumi.manufacturerCode});
+            },
+        }];
+        const result: ModernExtend = {exposes, toZigbee, isModernExtend: true};
+
+        if (args.setEventMode) {
+            result.configure = lumiModernExtend.lumiSetEventMode().configure;
+        }
+
+        return result;
+    },
+    lumiBattery: (args?: {
+        cluster?: 'genBasic' | 'manuSpecificLumi',
+        voltageToPercentage?: string | {min: number, max: number},
+        percentageAtrribute?: number,
+        voltageAttribute?: number,
+    }): ModernExtend => {
+        args = {
+            cluster: 'manuSpecificLumi',
+            percentageAtrribute: 1,
+            voltageAttribute: 1,
+            ...args,
+        };
+        const exposes: Expose[] = [e.battery(), e.battery_voltage()];
+
+        const fromZigbee: Fz.Converter[] = [
+            {
+                cluster: args.cluster,
+                type: ['attributeReport', 'readResponse'],
+                convert: (model, msg, publish, options, meta) => {
+                    const payload: KeyValueAny = {};
+                    const lookup: KeyValueAny = numericAttributes2Lookup(model, msg.data);
+                    if (lookup[args.percentageAtrribute.toString()]) {
+                        const value = lookup[args.percentageAtrribute];
+                        assertNumber(value);
+                        if (!args.voltageToPercentage) payload.battery = value;
+                    }
+                    if (lookup[args.voltageAttribute.toString()]) {
+                        const value = lookup[args.voltageAttribute];
+                        assertNumber(value);
+                        payload.voltage = value;
+                        if (args.voltageToPercentage) payload.battery = batteryVoltageToPercentage(value, args.voltageToPercentage);
+                    }
+                    return payload;
+                },
+            },
+        ];
+
+        return {exposes, fromZigbee, isModernExtend: true};
+    },
 };
 
 export {lumiModernExtend as modernExtend};
@@ -1623,7 +1939,7 @@ export const fromZigbee = {
         convert: async (model, msg, publish, options, meta) => {
             let payload = {};
             if (Buffer.isBuffer(msg.data)) {
-                const dataObject = buffer2DataObject(meta, model, msg.data);
+                const dataObject = buffer2DataObject(model, msg.data);
                 payload = await numericAttributes2Payload(msg, meta, model, options, dataObject);
             }
             return payload;
@@ -1785,7 +2101,7 @@ export const fromZigbee = {
                         action_from_side: Math.floor((value - 64) / 8) + 1,
                     };
                 } else {
-                    meta.logger.debug(`${model.model}: unknown action with value ${value}`);
+                    logger.debug(`${model.model}: unknown action with value ${value}`, NS);
                 }
                 return payload;
             }
@@ -1898,6 +2214,16 @@ export const fromZigbee = {
             }
         },
     } satisfies Fz.Converter,
+    lumi_pressure: {
+        cluster: 'msPressureMeasurement',
+        type: ['attributeReport', 'readResponse'],
+        convert: async (model, msg, publish, options, meta) => {
+            const result = await fz.pressure.convert(model, msg, publish, options, meta);
+            if (result && result.pressure > 500 && result.pressure < 2000) {
+                return result;
+            }
+        },
+    } satisfies Fz.Converter,
 
     // lumi class specific
     lumi_feeder: {
@@ -1910,7 +2236,7 @@ export const fromZigbee = {
                 case 0xfff1: {
                     // @ts-expect-error
                     if (value.length < 8) {
-                        meta.logger.debug(`zigbee-herdsman-converters:aqara_feeder: cannot handle ${value}, frame too small`);
+                        logger.debug(`Cannot handle ${value}, frame too small`, 'zhc:lumi:feeder');
                         return;
                     }
                     // @ts-expect-error
@@ -1972,20 +2298,20 @@ export const fromZigbee = {
                         break;
                     case 0x080007d1: // ? 64
                     case 0x0d090055: // ? 00
-                        meta.logger.debug(`zigbee-herdsman-converters:aqara_feeder: Unhandled attribute ${attr} = ${val}`);
+                        logger.debug(`Unhandled attribute ${attr} = ${val}`, 'zhc:lumi:feeder');
                         break;
                     default:
-                        meta.logger.debug(`zigbee-herdsman-converters:aqara_feeder: Unknown attribute ${attr} = ${val}`);
+                        logger.debug(`Unknown attribute ${attr} = ${val}`, 'zhc:lumi:feeder');
                     }
                     break;
                 }
                 case 0x00ff: // 80:13:58:91:24:33:20:24:58:53:44:07:05:97:75:17
                 case 0x0007: // 00:00:00:00:1d:b5:a6:ed
                 case 0x00f7: // 05:21:14:00:0d:23:21:25:00:00:09:21:00:01
-                    meta.logger.debug(`zigbee-herdsman-converters:aqara_feeder: Unhandled key ${key} = ${value}`);
+                    logger.debug(`Unhandled key ${key} = ${value}`, 'zhc:lumi:feeder');
                     break;
                 default:
-                    meta.logger.debug(`zigbee-herdsman-converters:aqara_feeder: Unknown key ${key} = ${value}`);
+                    logger.debug(`Unknown key ${key} = ${value}`, 'zhc:lumi:feeder');
                 }
             });
             return result;
@@ -2037,7 +2363,7 @@ export const fromZigbee = {
                     // @ts-expect-error
                     const heartbeat = trv.decodeHeartbeat(meta, model, value);
 
-                    meta.logger.debug(`${model.model}: Processed heartbeat message into payload ${JSON.stringify(heartbeat)}`);
+                    logger.debug(`${model.model}: Processed heartbeat message into payload ${JSON.stringify(heartbeat)}`, 'zhc:lumi:trv');
 
                     if (heartbeat.firmware_version) {
                         // Overwrite the "placeholder" version `0.0.0_0025` advertised by `genBasic`
@@ -2075,10 +2401,10 @@ export const fromZigbee = {
                 case 0x00ff: // 4e:27:49:bb:24:b6:30:dd:74:de:53:76:89:44:c4:81
                 case 0x027c: // 0x00
                 case 0x0280: // 0x00/0x01
-                    meta.logger.debug(`zigbee-herdsman-converters:lumi_trv: Unhandled key ${key} = ${value}`);
+                    logger.debug(`Unhandled key ${key} = ${value}`, 'zhc:lumi:trv');
                     break;
                 default:
-                    meta.logger.warn(`zigbee-herdsman-converters:lumi_trv: Unknown key ${key} = ${value}`);
+                    logger.warning(`Unknown key ${key} = ${value}`, 'zhc:lumi:trv');
                 }
             });
             return result;
@@ -2089,7 +2415,6 @@ export const fromZigbee = {
         type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
             const payload: KeyValue = {};
-            const log = createLogger(meta.logger, 'lumi', 'lumi_presence');
 
             Object.entries(msg.data).forEach(([key, value]) => {
                 const eventKey = parseInt(key);
@@ -2101,7 +2426,7 @@ export const fromZigbee = {
                         !(typeof value[0] === 'string' || typeof value[0] === 'number') ||
                         !(typeof value[1] === 'string' || typeof value[1] === 'number')
                     ) {
-                        log('warn', `action: Unrecognized payload structure '${JSON.stringify(value)}'`);
+                        logger.warning(`Action: Unrecognized payload structure '${JSON.stringify(value)}'`, NS);
                         break;
                     }
 
@@ -2112,16 +2437,16 @@ export const fromZigbee = {
                     const eventTypeCode = parseInt(eventTypeCodeRaw, 10);
 
                     if (Number.isNaN(regionId)) {
-                        log('warn', `action: Invalid regionId "${regionIdRaw}"`);
+                        logger.warning(`Action: Invalid regionId "${regionIdRaw}"`, NS);
                         break;
                     }
                     if (!Object.values(presence.constants.region_event_types).includes(eventTypeCode)) {
-                        log('warn', `action: Unknown region event type "${eventTypeCode}"`);
+                        logger.warning(`Action: Unknown region event type "${eventTypeCode}"`, NS);
                         break;
                     }
 
                     const eventTypeName = presence.mappers.lumi_presence.region_event_type_names[eventTypeCode];
-                    log('debug', `action: Triggered event (region "${regionId}", type "${eventTypeName}")`);
+                    logger.debug(`Action: Triggered event (region "${regionId}", type "${eventTypeName}")`, NS);
                     payload.action = `region_${regionId}_${eventTypeName}`;
                     break;
                 }
@@ -2207,9 +2532,9 @@ export const fromZigbee = {
         type: ['attributeReport', 'readResponse'],
         options: [exposes.options.invert_cover()],
         convert: (model, msg, publish, options, meta) => {
-            if ((model.model === 'ZNCLDJ12LM' || model.model === 'ZNCLDJ14LM') &&
+            if ((model.model === 'ZNCLDJ12LM') &&
               msg.type === 'attributeReport' && [0, 2].includes(msg.data['presentValue'])) {
-                // Incorrect reports from the device, ignore (re-read by onEvent of ZNCLDJ12LM and ZNCLDJ14LM)
+                // Incorrect reports from the device, ignore (re-read by onEvent of ZNCLDJ12LM)
                 // https://github.com/Koenkk/zigbee-herdsman-converters/pull/1427#issuecomment-663862724
                 return;
             }
@@ -2290,25 +2615,6 @@ export const fromZigbee = {
             }
         },
     } satisfies Fz.Converter,
-    lumi_knob_rotation: {
-        cluster: 'manuSpecificLumi',
-        type: ['attributeReport', 'readResponse'],
-        convert: (model, msg, publish, options, meta) => {
-            if (msg.data.hasOwnProperty(570)) {
-                const act: KeyValueNumberString = {1: 'start_rotating', 2: 'rotation', 3: 'stop_rotating'};
-                const state: KeyValueNumberString = {0: 'released', 128: 'pressed'};
-                return {
-                    action: act[msg.data[570] & ~128],
-                    action_rotation_button_state: state[msg.data[570] & 128],
-                    action_rotation_angle: msg.data[558],
-                    action_rotation_angle_speed: msg.data[560],
-                    action_rotation_percent: msg.data[563],
-                    action_rotation_percent_speed: msg.data[562],
-                    action_rotation_time: msg.data[561],
-                };
-            }
-        },
-    } satisfies Fz.Converter,
     lumi_curtain_status: {
         cluster: 'genMultistateOutput',
         type: ['attributeReport'],
@@ -2318,9 +2624,9 @@ export const fromZigbee = {
             let lookup: KeyValueAny = {};
 
             // For lumi.curtain.hagl04 and lumi.curtain.hagl07
-            if (['ZNCLDJ12LM', 'ZNCLDJ14LM'].includes(model.model)) lookup = {0: 'closing', 1: 'opening', 2: 'stop'};
+            if (['ZNCLDJ12LM', 'ZNCLDJ14LM'].includes(model.model)) lookup = {0: 'closing', 1: 'opening', 2: 'stopped'};
             // for lumi.curtain.acn002
-            if (['ZNJLBL01LM'].includes(model.model)) lookup = {0: 'declining', 1: 'rising', 2: 'pause', 3: 'blocked'};
+            if (['ZNJLBL01LM'].includes(model.model)) lookup = {0: 'closing', 1: 'opening', 2: 'stopped', 3: 'blocked'};
 
             if (data && data.hasOwnProperty('presentValue')) {
                 const value = data['presentValue'];
@@ -2334,11 +2640,17 @@ export const fromZigbee = {
             }
         },
     } satisfies Fz.Converter,
-    lumi_vibration: {
-        cluster: 'genOnOff',
-        type: 'commandOn',
+    lumi_curtain_options: {
+        cluster: 'manuSpecificLumi',
+        type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
-            return {action: 'vibration'};
+            if (msg.data.hasOwnProperty('curtainHandOpen')) {
+                return {hand_open: msg.data['curtainHandOpen'] === 0};
+            } else if (msg.data.hasOwnProperty('curtainReverse')) {
+                return {reverse_direction: msg.data['curtainReverse'] === 1};
+            } else if (msg.data.hasOwnProperty('curtainCalibrated')) {
+                return {limits_calibration: (msg.data['curtainCalibrated'] === 1) ? 'calibrated' : 'recalibrate'};
+            }
         },
     } satisfies Fz.Converter,
     lumi_vibration_analog: {
@@ -3052,7 +3364,7 @@ export const toZigbee = {
                 await sendAttr(0x0e5f0055, value, 4);
                 break;
             default: // Unknown key
-                meta.logger.warn(`zigbee-herdsman-converters:aqara_feeder: Unhandled key ${key}`);
+                logger.warning(`Unhandled key ${key}`, 'zhc:lumi:feeder');
             }
             return {state: {[key]: value}};
         },
@@ -3201,7 +3513,7 @@ export const toZigbee = {
                 break;
             }
             default: // Unknown key
-                meta.logger.warn(`zigbee-herdsman-converters:lumi_trv: Unhandled key ${key}`);
+                logger.warning(`Unhandled key ${key}`, 'zhc:lumi:trv');
             }
         },
         convertGet: async (entity, key, meta) => {
@@ -3217,14 +3529,13 @@ export const toZigbee = {
     lumi_presence_region_upsert: {
         key: ['region_upsert'],
         convertSet: async (entity, key, value, meta) => {
-            const log = createLogger(meta.logger, 'lumi', 'lumi_presence:region_upsert');
             const commandWrapper = presence.parseAqaraFp1RegionUpsertInput(value);
 
             if (!commandWrapper.isSuccess) {
-                log('warn',
-                    // @ts-expect-error
-                    `encountered an error (${commandWrapper.error.reason}) ` +
-                    `while parsing configuration commands (input: ${JSON.stringify(value)})`,
+                logger.warning(
+                    // @ts-expect-error untyped
+                    `Encountered an error (${commandWrapper.error.reason}) while parsing configuration commands (input: ${JSON.stringify(value)})`,
+                    NS,
                 );
 
                 return;
@@ -3232,7 +3543,7 @@ export const toZigbee = {
 
             const command = commandWrapper.payload.command;
 
-            log('debug', `trying to create region ${command.region_id}`);
+            logger.debug(`Trying to create region ${command.region_id}`, NS);
 
             const sortedZonesAccumulator = {};
             const sortedZonesWithSets: {[s: number]: [number]} = command.zones
@@ -3269,7 +3580,7 @@ export const toZigbee = {
             deviceConfig[4] |= presence.encodeXCellsDefinition(sortedZones['6']) << 4;
             deviceConfig[5] |= presence.encodeXCellsDefinition(sortedZones['7']);
 
-            log('info', `create region ${command.region_id} ${printNumbersAsHexSequence([...deviceConfig], 2)}`);
+            logger.info( `Create region ${command.region_id} ${printNumbersAsHexSequence([...deviceConfig], 2)}`, NS);
 
             const payload = {
                 [presence.constants.region_config_write_attribute]: {
@@ -3284,20 +3595,19 @@ export const toZigbee = {
     lumi_presence_region_delete: {
         key: ['region_delete'],
         convertSet: async (entity, key, value, meta) => {
-            const log = createLogger(meta.logger, 'lumi', 'lumi_presence:region_delete');
             const commandWrapper = presence.parseAqaraFp1RegionDeleteInput(value);
 
             if (!commandWrapper.isSuccess) {
-                log('warn',
+                logger.warning(
                     // @ts-expect-error
-                    `encountered an error (${commandWrapper.error.reason}) ` +
-                    `while parsing configuration commands (input: ${JSON.stringify(value)})`,
+                    `Encountered an error (${commandWrapper.error.reason}) while parsing configuration commands (input: ${JSON.stringify(value)})`,
+                    NS,
                 );
                 return;
             }
             const command = commandWrapper.payload.command;
 
-            log('debug', `trying to delete region ${command.region_id}`);
+            logger.debug(`trying to delete region ${command.region_id}`, NS);
 
             const deviceConfig = new Uint8Array(7);
 
@@ -3311,10 +3621,7 @@ export const toZigbee = {
             deviceConfig[4] = 0;
             deviceConfig[5] = 0;
 
-            log('info',
-                `delete region ${command.region_id} ` +
-                `(${printNumbersAsHexSequence([...deviceConfig], 2)})`,
-            );
+            logger.info(`Delete region ${command.region_id} (${printNumbersAsHexSequence([...deviceConfig], 2)})`, NS);
 
             const payload = {
                 [presence.constants.region_config_write_attribute]: {
@@ -3339,10 +3646,10 @@ export const toZigbee = {
                     {0x0148: {value: getFromLookup(value, lookup), type: 0x20}},
                     {manufacturerCode: manufacturerCode, disableDefaultResponse: true},
                 );
-                meta.logger.info('operation_mode switch success!');
+                logger.info('operation_mode switch success!', 'zhc:lumi:cube');
             };
             globalStore.putValue(meta.device, 'opModeSwitchTask', {callback, newMode: value});
-            meta.logger.info('Now give your cube a forceful throw motion (Careful not to drop it)!');
+            logger.info('Now give your cube a forceful throw motion (Careful not to drop it)!', 'zhc:lumi:cube');
         },
     } satisfies Tz.Converter,
     lumi_switch_operation_mode_basic: {
@@ -3746,7 +4053,7 @@ export const toZigbee = {
             if (value.hasOwnProperty('auto_close')) opts.hand_open = value.auto_close;
             if (value.hasOwnProperty('reset_move')) opts.reset_limits = value.reset_move;
 
-            if (meta.mapped.model === 'ZNCLDJ12LM' || meta.mapped.model === 'ZNCLDJ14LM') {
+            if (meta.mapped.model === 'ZNCLDJ12LM') {
                 await entity.write('genBasic', {0xff28: {value: opts.reverse_direction, type: 0x10}}, manufacturerOptions.lumi);
                 await entity.write('genBasic', {0xff29: {value: !opts.hand_open, type: 0x10}}, manufacturerOptions.lumi);
 
@@ -3787,7 +4094,7 @@ export const toZigbee = {
         convertSet: async (entity, key, value, meta) => {
             if (Array.isArray(meta.mapped)) throw new Error(`Not supported for groups`);
             if (key === 'state' && typeof value === 'string' && value.toLowerCase() === 'stop') {
-                if (meta.mapped.model == 'ZNJLBL01LM') {
+                if (['ZNJLBL01LM', 'ZNCLDJ14LM'].includes(meta.mapped.model)) {
                     const payload = {'presentValue': 2};
                     await entity.write('genMultistateOutput', payload);
                 } else {
@@ -3823,7 +4130,7 @@ export const toZigbee = {
                     await entity.command('closuresWindowCovering', 'goToLiftPercentage', {percentageliftvalue: value},
                         getOptions(meta.mapped, entity));
                 } else {
-                    const payload = {0x0055: {value, type: 0x39}};
+                    const payload = {'presentValue': value};
                     await entity.write('genAnalogOutput', payload);
                 }
             }
@@ -3888,10 +4195,19 @@ export const toZigbee = {
     lumi_curtain_hand_open: {
         key: ['hand_open'],
         convertSet: async (entity, key, value, meta) => {
-            await entity.write('manuSpecificLumi', {0x0401: {value: !value, type: 0x10}}, manufacturerOptions.lumi);
+            await entity.write('manuSpecificLumi', {'curtainHandOpen': !value}, manufacturerOptions.lumi);
         },
         convertGet: async (entity, key, meta) => {
-            await entity.read('manuSpecificLumi', [0x0401], manufacturerOptions.lumi);
+            await entity.read('manuSpecificLumi', ['curtainHandOpen'], manufacturerOptions.lumi);
+        },
+    } satisfies Tz.Converter,
+    lumi_curtain_reverse: {
+        key: ['reverse_direction'],
+        convertSet: async (entity, key, value, meta) => {
+            await entity.write('manuSpecificLumi', {'curtainReverse': value}, manufacturerOptions.lumi);
+        },
+        convertGet: async (entity, key, meta) => {
+            await entity.read('manuSpecificLumi', ['curtainReverse'], manufacturerOptions.lumi);
         },
     } satisfies Tz.Converter,
     lumi_curtain_limits_calibration: {
@@ -3907,6 +4223,26 @@ export const toZigbee = {
             case 'reset':
                 await entity.write('manuSpecificLumi', {0x0407: {value: 0x00, type: 0x20}}, manufacturerOptions.lumi);
                 // also? await entity.write('manuSpecificLumi', {0x0402: {value: 0x00, type: 0x10}}, manufacturerOptions.lumi);
+                break;
+            }
+        },
+    } satisfies Tz.Converter,
+    lumi_curtain_limits_calibration_ZNCLDJ14LM: {
+        key: ['limits_calibration'],
+        options: [
+            e.enum('limits_calibration', ea.ALL, ['calibrated', 'recalibrate', 'open', 'close'])
+                .withDescription('Recalibrate the position limits'),
+        ],
+        convertSet: async (entity, key, value, meta) => {
+            switch (value) {
+            case 'recalibrate':
+                await entity.write('manuSpecificLumi', {'curtainCalibrated': false}, manufacturerOptions.lumi);
+                break;
+            case 'open':
+                await entity.write('genMultistateOutput', {'presentValue': 1}, manufacturerOptions.lumi);
+                break;
+            case 'close':
+                await entity.write('genMultistateOutput', {'presentValue': 0}, manufacturerOptions.lumi);
                 break;
             }
         },

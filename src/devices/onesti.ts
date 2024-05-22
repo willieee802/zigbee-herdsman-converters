@@ -58,15 +58,45 @@ const fzLocal = {
 
 const definitions: Definition[] = [
     {
-        zigbeeModel: ['easyCodeTouch_v1', 'EasyCodeTouch', 'EasyFingerTouch', 'NimlyPRO', 'NimlyCode', 'NimlyTouch', 'NimlyIn'],
+        zigbeeModel: ['easyCodeTouch_v1', 'EasyCodeTouch', 'EasyFingerTouch'],
         model: 'easyCodeTouch_v1',
         vendor: 'Onesti Products AS',
         description: 'Zigbee module for EasyAccess code touch series',
         fromZigbee: [fzLocal.nimly_pro_lock_actions, fz.lock, fz.lock_operation_event, fz.battery, fz.lock_programming_event,
             fz.easycodetouch_action],
         toZigbee: [tz.lock, tz.easycode_auto_relock, tz.lock_sound_volume, tz.pincode_lock],
+        meta: {pinCodeCount: 1000},
+        configure: async (device, coordinatorEndpoint) => {
+            const endpoint = device.getEndpoint(11);
+            await reporting.bind(endpoint, coordinatorEndpoint, ['closuresDoorLock', 'genPowerCfg']);
+            await reporting.lockState(endpoint);
+            await reporting.batteryPercentageRemaining(endpoint);
+            await endpoint.read('closuresDoorLock', ['lockState', 'soundVolume']);
+            device.powerSource = 'Battery';
+            device.save();
+        },
+        exposes: [e.lock(), e.battery(), e.sound_volume(),
+            e.enum('last_unlock_source', ea.STATE, ['zigbee', 'keypad', 'fingerprintsensor', 'rfid',
+                'self', 'unknown']).withDescription('Last unlock source'),
+            e.text('last_unlock_user', ea.STATE).withDescription('Last unlock user').withDescription('Last unlock user'),
+            e.enum('last_lock_source', ea.STATE, ['zigbee', 'keypad', 'fingerprintsensor', 'rfid',
+                'self', 'unknown']).withDescription('Last lock source'),
+            e.text('last_lock_user', ea.STATE).withDescription('Last lock user'),
+            e.text('last_used_pin_code', ea.STATE).withDescription('Last used pin code'),
+            e.binary('auto_relock', ea.STATE_SET, true, false).withDescription('Auto relock after 7 seconds.'),
+            e.pincode(),
+        ],
+    },
+    {
+        zigbeeModel: ['NimlyPRO', 'NimlyCode', 'NimlyTouch', 'NimlyIn'],
+        model: 'Nimly',
+        vendor: 'Onesti Products AS',
+        description: 'Zigbee module for Nimly Doorlock series',
+        fromZigbee: [fzLocal.nimly_pro_lock_actions, fz.lock, fz.lock_operation_event, fz.battery, fz.lock_programming_event,
+            fz.easycodetouch_action],
+        toZigbee: [tz.lock, tz.easycode_auto_relock, tz.lock_sound_volume, tz.pincode_lock],
         meta: {pinCodeCount: 1000, battery: {dontDividePercentage: true}},
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(11);
             await reporting.bind(endpoint, coordinatorEndpoint, ['closuresDoorLock', 'genPowerCfg']);
             await reporting.lockState(endpoint);
@@ -95,7 +125,7 @@ const definitions: Definition[] = [
         fromZigbee: [fz.on_off, fz.electrical_measurement, fz.metering, fz.device_temperature, fz.identify],
         toZigbee: [tz.on_off],
         exposes: [e.switch(), e.power(), e.current(), e.voltage(), e.energy(), e.device_temperature()],
-        configure: async (device, coordinatorEndpoint, logger) => {
+        configure: async (device, coordinatorEndpoint) => {
             const endpoint = device.getEndpoint(2);
             await reporting.bind(endpoint, coordinatorEndpoint, ['genIdentify', 'genOnOff', 'genDeviceTempCfg',
                 'haElectricalMeasurement', 'seMetering']);
