@@ -2283,7 +2283,7 @@ const definitions: Definition[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint('TS0601', ['_TZE200_mwvfvw8g', '_TZE200_wnp4d4va', '_TZE200_cduqh1l0']),
+        fingerprint: tuya.fingerprint('TS0601', ['_TZE200_mwvfvw8g', '_TZE200_wnp4d4va', '_TZE200_cduqh1l0', '_TZE284_wyconn14']),
         model: 'TS0601_switch_6_gang',
         vendor: 'TuYa',
         description: '6 gang switch',
@@ -3307,6 +3307,7 @@ const definitions: Definition[] = [
             {modelID: 'TS0601', manufacturerName: '_TZE200_zxxfv8wi'},
             {modelID: 'TS0601', manufacturerName: '_TZE200_1fuxihti'},
             {modelID: 'TS0601', manufacturerName: '_TZE204_1fuxihti'},
+            {modelID: 'TS0601', manufacturerName: '_TZE200_8viydiwr'},
             // Roller blinds:
             {modelID: 'TS0601', manufacturerName: '_TZE200_fctwhugx'},
             {modelID: 'TS0601', manufacturerName: '_TZE200_hsgrhjpf'},
@@ -3328,6 +3329,7 @@ const definitions: Definition[] = [
             {modelID: 'TS0601', manufacturerName: '_TZE200_yia0p3tr'},
             {modelID: 'TS0601', manufacturerName: '_TZE200_rsj5pu8y'},
             {modelID: 'TS0601', manufacturerName: '_TZE204_xu4a5rhj'},
+            {modelID: 'TS0601', manufacturerName: '_TZE200_2odrmqwq'},
         ],
         model: 'TS0601_cover_1',
         vendor: 'TuYa',

@@ -1,7 +1,7 @@
 {
   "name": "@willieee802/zigbee-herdsman-converters",
   "description": "Custom fork from zigbee-herdsman-converters",
-  "version": "19.43.0",
+  "version": "19.43.1",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
