@@ -1,5 +1,5 @@
-import {Zcl} from "zigbee-herdsman";
-import type {ClusterOrRawAttributeKeys, ClusterOrRawAttributes, TCustomCluster} from "zigbee-herdsman/dist/controller/tstype";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {ClusterOrRawAttributeKeys, ClusterOrRawAttributes, TCustomCluster} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
 import type {Light, Numeric} from "./exposes";
 import {logger} from "./logger";
 import * as globalStore from "./store";

@@ -1,4 +1,4 @@
-import {Zcl} from "zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 
 import {presets} from "../lib/exposes";
 import * as m from "../lib/modernExtend";

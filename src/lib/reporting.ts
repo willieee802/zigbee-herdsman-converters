@@ -1,5 +1,5 @@
-import type {ConfigureReportingItem} from "zigbee-herdsman/dist/controller/model/endpoint";
-import type {TCustomCluster} from "zigbee-herdsman/dist/controller/tstype";
+import type {ConfigureReportingItem} from "@willieee802/zigbee-herdsman/dist/controller/model/endpoint";
+import type {TCustomCluster} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
 import {repInterval} from "./constants";
 import type {Reporting, Zh} from "./types";
 

@@ -1,4 +1,4 @@
-import type {TClusterAttributeKeys} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
+import type {TClusterAttributeKeys} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import {logger} from "./logger";
 import type {Tz, Zh} from "./types";
 import * as utils from "./utils";

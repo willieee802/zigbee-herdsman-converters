@@ -1,6 +1,6 @@
-import {Zcl} from "zigbee-herdsman";
-import type {ClusterOrRawPayload} from "zigbee-herdsman/dist/controller/tstype";
-import type {Parameter} from "zigbee-herdsman/dist/zspec/zcl/definition/tstype";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {ClusterOrRawPayload} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
+import type {Parameter} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/tstype";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as exposes from "../lib/exposes";

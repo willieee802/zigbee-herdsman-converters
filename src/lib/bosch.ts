@@ -1,6 +1,7 @@
-import {Zcl, ZSpec} from "zigbee-herdsman";
-import type {SendPolicy} from "zigbee-herdsman/dist/controller/tstype";
-import type {TPartialClusterAttributes} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
+import {Zcl, ZSpec} from "@willieee802/zigbee-herdsman";
+import {Endpoint} from "@willieee802/zigbee-herdsman/dist/controller/model";
+import type {SendPolicy} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
+import type {TPartialClusterAttributes} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as exposes from "../lib/exposes";
@@ -1299,14 +1300,14 @@ export const boschBmctExtend = {
                 ],
                 convertSet: async (entity, key, value, meta) => {
                     if (key === "state") {
-                        if ("ID" in entity && entity.ID === 1) {
+                        if ("ID" in entity && entity instanceof Endpoint && entity.ID === 1) {
                             await tz.cover_state.convertSet(entity, key, value, meta);
                         } else {
                             await tz.on_off.convertSet(entity, key, value, meta);
                         }
                     }
                     if (key === "on_time" || key === "on_wait_time") {
-                        if ("ID" in entity && entity.ID !== 1) {
+                        if ("ID" in entity && entity instanceof Endpoint && entity.ID !== 1) {
                             await tz.on_off.convertSet(entity, key, value, meta);
                         }
                     }
@@ -1366,7 +1367,7 @@ export const boschBmctExtend = {
                         case "state":
                         case "on_time":
                         case "off_wait_time":
-                            if ("ID" in entity && entity.ID !== 1) {
+                            if ("ID" in entity && entity instanceof Endpoint && entity.ID !== 1) {
                                 await entity.read("genOnOff", ["onOff"]);
                             }
                             break;

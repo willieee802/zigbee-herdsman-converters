@@ -1,4 +1,4 @@
-import {Zcl, ZSpec} from "zigbee-herdsman";
+import {Zcl, ZSpec} from "@willieee802/zigbee-herdsman";
 import * as fz from "../converters/fromZigbee";
 import * as exposes from "../lib/exposes";
 import {logger} from "../lib/logger";

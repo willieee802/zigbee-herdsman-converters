@@ -1,5 +1,5 @@
-import type {RawClusterAttributes} from "zigbee-herdsman/dist/controller/tstype";
-import type {TPartialClusterAttributes} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
+import type {RawClusterAttributes} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
+import type {TPartialClusterAttributes} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import {access as ea} from "../lib/exposes";
 import * as m from "../lib/modernExtend";
 import * as reporting from "../lib/reporting";

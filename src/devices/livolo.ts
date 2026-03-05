@@ -1,4 +1,4 @@
-import type {RawClusterAttributes} from "zigbee-herdsman/dist/controller/tstype";
+import type {RawClusterAttributes} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as exposes from "../lib/exposes";

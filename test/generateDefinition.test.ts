@@ -1,5 +1,5 @@
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import {describe, expect, test} from "vitest";
-import {Zcl} from "zigbee-herdsman";
 import {findByDevice, generateExternalDefinitionSource} from "../src";
 import * as fz from "../src/converters/fromZigbee";
 import {repInterval} from "../src/lib/constants";

@@ -1,5 +1,5 @@
-import {Zcl} from "zigbee-herdsman";
-import type {Struct, ZclArray} from "zigbee-herdsman/dist/zspec/zcl/definition/tstype";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {Struct, ZclArray} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/tstype";
 import * as exposes from "../lib/exposes";
 import * as m from "../lib/modernExtend";
 import {presets as e, access as ea} from "./exposes";

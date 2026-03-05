@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import {Zcl} from "zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import * as fromZigbee from "./converters/fromZigbee";
 import * as toZigbee from "./converters/toZigbee";
 import * as exposesLib from "./lib/exposes";

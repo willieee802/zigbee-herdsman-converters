@@ -1,7 +1,7 @@
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import {describe, it} from "vitest";
-import {Zcl} from "zigbee-herdsman";
 import * as fz from "../src/converters/fromZigbee";
-import {fzLocal, smartthingsExtend} from "../src/devices/smartthings";
+import {fzLocal} from "../src/devices/smartthings";
 import {repInterval} from "../src/lib/constants";
 import {assertDefinition, mockDevice, reportingItem} from "./utils";
 
@@ -10,10 +10,11 @@ describe("Check definition", () => {
         await assertDefinition({
             device: mockDevice({
                 modelID: "multi",
-                endpoints: [{ID: 1, inputClusters: ["msTemperatureMeasurement", "genPowerCfg", "manuSpecificSamsungAccelerometer", "genPollCtrl"]}],
+                // manuSpecificSamsungAccelerometer 自定义簇已经从 zigbee-herdsman 移到本项目，
+                // 这里直接使用簇 ID，避免通过 zigbee-herdsman 的 Clusters 查找它。
+                endpoints: [{ID: 1, inputClusterIDs: [0x0402, 0x0001, 0xfc02, 0x0020]}],
             }),
             meta: undefined,
-            extend: [smartthingsExtend.addManuSpecificSamsungAccelerometerCluster()],
             fromZigbee: [fz.temperature, fz.battery, fz.ias_contact_alarm_1, fzLocal.acceleration],
             toZigbee: [],
             exposes: ["battery", "battery_low", "contact", "moving", "tamper", "temperature", "x_axis", "y_axis", "z_axis"],

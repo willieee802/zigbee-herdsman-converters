@@ -1,4 +1,4 @@
-import {Zcl} from "zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 
 import type {Fz, KeyValue, Tz} from "../lib/types";
 import * as utils from "../lib/utils";

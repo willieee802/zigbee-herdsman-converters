@@ -1,6 +1,6 @@
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {TClusterCommandPayload} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import type {HeimanSpecificInfraRedRemoteCluster} from "src/lib/heiman";
-import {Zcl} from "zigbee-herdsman";
-import type {TClusterCommandPayload} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import * as libColor from "../lib/color";
 import * as constants from "../lib/constants";
 import * as exposes from "../lib/exposes";

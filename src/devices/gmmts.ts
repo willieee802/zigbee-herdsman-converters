@@ -1,6 +1,6 @@
 import {Buffer} from "node:buffer";
-import type {Models as ZHModels} from "zigbee-herdsman";
-import {Zcl} from "zigbee-herdsman";
+import type {Models as ZHModels} from "@willieee802/zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import * as fz from "../converters/fromZigbee";
 import {repInterval} from "../lib/constants";
 import * as exposes from "../lib/exposes";
@@ -2366,7 +2366,7 @@ export const definitions: DefinitionWithExtend[] = [
                     endpoint.configureReporting(
                         item.clust,
                         reporting.payload(
-                            // @ts-expect-error too dynamic to type
+                            // @ts-expect-error dynamic, expected correct since already applied
                             item.attr,
                             conf.min,
                             conf.max,

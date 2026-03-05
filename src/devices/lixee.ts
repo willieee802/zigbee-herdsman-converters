@@ -1,7 +1,7 @@
 import {Buffer} from "node:buffer";
-import {Zcl} from "zigbee-herdsman";
-import {DataType} from "zigbee-herdsman/dist/zspec/zcl";
-import type {TPartialClusterAttributes} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import {DataType} from "@willieee802/zigbee-herdsman/dist/zspec/zcl";
+import type {TPartialClusterAttributes} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import * as fz from "../converters/fromZigbee";
 import {repInterval} from "../lib/constants";
 import * as exposes from "../lib/exposes";
