@@ -1,7 +1,7 @@
 {
   "name": "@willieee802/zigbee-herdsman-converters",
   "description": "Custom fork from zigbee-herdsman-converters",
-  "version": "19.43.3",
+  "version": "19.44.0",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
@@ -45,7 +45,7 @@
   "dependencies": {
     "iconv-lite": "^0.7.2",
     "semver": "^7.7.4",
-    "@willieee802/zigbee-herdsman": "^0.49.0"
+    "@willieee802/zigbee-herdsman": "^0.49.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",
