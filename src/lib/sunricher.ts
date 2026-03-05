@@ -1,4 +1,4 @@
-import type {Endpoint, Group} from "zigbee-herdsman/dist/controller/model";
+import type {Endpoint, Group} from "@willieee802/zigbee-herdsman/dist/controller/model";
 import type {SunricherHvacThermostat, SunricherRemote} from "../devices/sunricher";
 import * as constants from "./constants";
 import {repInterval} from "./constants";

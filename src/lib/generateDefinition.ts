@@ -1,7 +1,7 @@
-import type {Models as ZHModels} from "zigbee-herdsman";
+import type {Models as ZHModels} from "@willieee802/zigbee-herdsman";
 
-import {Zcl} from "zigbee-herdsman";
-import type {Cluster} from "zigbee-herdsman/dist/zspec/zcl/definition/tstype";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {Cluster} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/tstype";
 
 import {logger} from "./logger";
 import * as m from "./modernExtend";

@@ -1,4 +1,4 @@
-import {Zcl} from "zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as constants from "../lib/constants";
@@ -147,6 +147,7 @@ export const definitions: DefinitionWithExtend[] = [
             await reporting.bind(endpoint, coordinatorEndpoint, ["msTemperatureMeasurement", "genPowerCfg", "manuSpecificSamsungAccelerometer"]);
             await reporting.temperature(endpoint);
             await reporting.batteryVoltage(endpoint);
+            // @ts-expect-error dynamic, expected correct since already applied
             const payloadA = reporting.payload<"manuSpecificSamsungAccelerometer">("acceleration", 10, constants.repInterval.MINUTE, 1);
             await endpoint.configureReporting("manuSpecificSamsungAccelerometer", payloadA, options);
             const payloadX = reporting.payload<"manuSpecificSamsungAccelerometer", SamsungAccelerometer>(
@@ -351,6 +352,7 @@ export const definitions: DefinitionWithExtend[] = [
             await endpoint.write("manuSpecificSamsungAccelerometer", {2: {value: 0x0276, type: 0x21}}, options);
             await reporting.temperature(endpoint);
             await reporting.batteryVoltage(endpoint);
+            // @ts-expect-error dynamic, expected correct since already applied
             const payloadA = reporting.payload<"manuSpecificSamsungAccelerometer">("acceleration", 10, constants.repInterval.MINUTE, 1);
             await endpoint.configureReporting("manuSpecificSamsungAccelerometer", payloadA, options);
             const payloadX = reporting.payload<"manuSpecificSamsungAccelerometer", SamsungAccelerometer>(

@@ -1,5 +1,5 @@
-import type {Types as ZHTypes} from "zigbee-herdsman";
-import {Zcl} from "zigbee-herdsman";
+import type {Types as ZHTypes} from "@willieee802/zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as exposes from "../lib/exposes";

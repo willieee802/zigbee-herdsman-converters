@@ -1,6 +1,5 @@
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import {gt as semverGt, gte as semverGte, lt as semverLt, valid as semverValid} from "semver";
-
-import {Zcl} from "zigbee-herdsman";
 import * as tz from "../converters/toZigbee";
 import * as constants from "../lib/constants";
 import {access, binary, options, presets} from "../lib/exposes";

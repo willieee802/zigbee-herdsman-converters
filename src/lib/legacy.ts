@@ -4675,7 +4675,7 @@ const toZigbee2 = {
                     await sendDataPointBool(entity, dataPoints.alectoSilence, value);
                     break;
                 default: // Unknown key
-                    throw new Error(`zigbee-herdsman-converters:tuya_alecto_smoke: Unhandled key ${key}`);
+                    throw new Error(`@willieee802/zigbee-herdsman-converters:tuya_alecto_smoke: Unhandled key ${key}`);
             }
         },
     } satisfies Tz.Converter,

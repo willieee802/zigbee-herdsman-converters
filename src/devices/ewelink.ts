@@ -1,4 +1,4 @@
-import {Zcl} from "zigbee-herdsman";
+import {Zcl} from "@willieee802/zigbee-herdsman";
 import * as fz from "../converters/fromZigbee";
 import {modernExtend as ewelinkModernExtend} from "../lib/ewelink";
 import * as exposes from "../lib/exposes";

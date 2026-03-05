@@ -1,6 +1,6 @@
 import {TextDecoder, TextEncoder} from "node:util";
-import {Zcl} from "zigbee-herdsman";
-import {DataType} from "zigbee-herdsman/dist/zspec/zcl";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import {DataType} from "@willieee802/zigbee-herdsman/dist/zspec/zcl";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as libColor from "../lib/color";
@@ -4907,6 +4907,7 @@ export const definitions: DefinitionWithExtend[] = [
             "_TZE204_wskr3up8",
             "_TZE204_gxbdnfrh",
             "_TZE284_g1enhdsi",
+            "_TZE284_wyconn14",
         ]),
         model: "TS0601_switch_6_gang",
         vendor: "Tuya",
@@ -6647,6 +6648,7 @@ export const definitions: DefinitionWithExtend[] = [
                 "_TZE200_zxxfv8wi",
                 "_TZE200_1fuxihti",
                 "_TZE204_1fuxihti",
+                "_TZE200_8viydiwr",
                 "_TZE204_57hjqelq",
                 "_TZE204_vvvtcehj",
                 "_TZE200_hojryzzd",

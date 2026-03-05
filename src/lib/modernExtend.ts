@@ -1,15 +1,15 @@
 import assert from "node:assert";
-import {Zcl} from "zigbee-herdsman";
-import type {Device} from "zigbee-herdsman/dist/controller/model";
+import {Zcl} from "@willieee802/zigbee-herdsman";
+import type {Device} from "@willieee802/zigbee-herdsman/dist/controller/model";
 import type {
     ClusterOrRawAttributeKeys,
     PartialClusterOrRawWriteAttributes,
     TCustomCluster,
     TCustomClusterPayload,
-} from "zigbee-herdsman/dist/controller/tstype";
-import type {TClusterPayload, TPartialClusterAttributes} from "zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
-import {DataType} from "zigbee-herdsman/dist/zspec/zcl/definition/enums";
-import type {ClusterDefinition} from "zigbee-herdsman/dist/zspec/zcl/definition/tstype";
+} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
+import type {TClusterPayload, TPartialClusterAttributes} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
+import {DataType} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/enums";
+import type {ClusterDefinition} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/tstype";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as constants from "../lib/constants";
