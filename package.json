@@ -1,17 +1,11 @@
 {
   "name": "@willieee802/zigbee-herdsman-converters",
   "description": "Custom fork from zigbee-herdsman-converters",
-  "version": "19.44.0",
+  "version": "19.44.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "/index.js",
-    "/index.js.map",
-    "/index.d.ts",
-    "/index.d.ts.map",
-    "/converters",
-    "/lib",
-    "/devices",
+    "dist",
     "CHANGELOG.md"
   ],
   "repository": {
