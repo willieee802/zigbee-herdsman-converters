@@ -2,8 +2,8 @@
   "name": "@willieee802/zigbee-herdsman-converters",
   "description": "Custom fork from zigbee-herdsman-converters",
   "version": "19.44.0",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
     "/index.js",
     "/index.js.map",
@@ -32,10 +32,9 @@
     "lint": "eslint .",
     "test": "vitest run --config ./test/vitest.config.mts",
     "test:coverage": "vitest run --config ./test/vitest.config.mts --coverage",
-    "test-watch": "ZHC_TEST=true jest test --silent --watch --maxWorkers=25%",
-    "clean": "rimraf --glob index* devices lib converters tsconfig.tsbuildinfo",
-    "build": "tsc",
-    "build-watch": "tsc --watch",
+    "clean": "rimraf coverage dist tsconfig.tsbuildinfo models-index.json",
+    "build": "tsc && node dist/indexer.js",
+    "build:watch": "tsc-watch --onSuccess 'node dist/indexer.js'",
     "prepack": "pnpm run clean && pnpm run build",
     "prepare": "husky"
   },
@@ -45,7 +44,7 @@
   "dependencies": {
     "iconv-lite": "^0.7.2",
     "semver": "^7.7.4",
-    "@willieee802/zigbee-herdsman": "^0.49.1"
+    "@willieee802/zigbee-herdsman": "^0.49.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",
