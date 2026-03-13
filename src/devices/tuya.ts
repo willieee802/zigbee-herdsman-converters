@@ -4757,7 +4757,7 @@ export const definitions: DefinitionWithExtend[] = [
         whiteLabel: [tuya.whitelabel("Yookee", "D10110_1", "Smart blind", ["_TZE200_9caxna4s"])],
     },
     {
-        fingerprint: tuya.fingerprint("TS0301", ["_TZE210_m6lwazh9"]),
+        fingerprint: tuya.fingerprint("TS0301", ["_TZE210_m6lwazh9", "_TZE210_o3mxw5kl"]),
         model: "TS0301_cover_1",
         vendor: "Tuya",
         description: "Cover motor",
