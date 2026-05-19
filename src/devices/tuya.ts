@@ -4128,6 +4128,7 @@ export const definitions: DefinitionWithExtend[] = [
             "_TZE200_0hb4rdnp",
             "_TZE200_gne0e6mk",
             "_TZE284_68utemio",
+            "_TZE284_ez3nlr8f",
         ]),
         model: "TS0601_dimmer_1_gang_1",
         vendor: "Tuya",
@@ -6688,6 +6689,7 @@ export const definitions: DefinitionWithExtend[] = [
                 "_TZE204_wzre8hu2",
                 "_TZE200_odlldrxx",
                 "_TZE204_zuq5xxib",
+                "_TZE200_kghhpqos",
             ]),
             ...tuya.fingerprint("zo2pocs\u0000", ["_TYST11_fzo2pocs"]),
             ...tuya.fingerprint("dank5zs\u0000", ["_TYST11_udank5zs"]),
@@ -10056,7 +10058,7 @@ export const definitions: DefinitionWithExtend[] = [
         exposes: [e.humidity(), e.temperature(), e.battery()],
     },
     {
-        fingerprint: tuya.fingerprint("TS0011", ["_TZ3000_l8fsgo6p"]),
+        fingerprint: tuya.fingerprint("TS0011", ["_TZ3000_l8fsgo6p", "_TZ3000_hqstcpdx"]),
         zigbeeModel: ["TS0011"],
         model: "TS0011",
         vendor: "Tuya",
@@ -10160,6 +10162,7 @@ export const definitions: DefinitionWithExtend[] = [
         },
     },
     {
+        fingerprint: tuya.fingerprint("TS0013", ["_TZ3000_txakkvcn"]),
         zigbeeModel: ["TS0013"],
         model: "TS0013",
         vendor: "Tuya",
