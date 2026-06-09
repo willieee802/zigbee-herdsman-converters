@@ -7,7 +7,7 @@ import type {
     TCustomClusterPayload,
     ZigbeeOtaImageMeta,
 } from "@willieee802/zigbee-herdsman/dist/controller/tstype";
-import type {Header as ZHZclHeader} from "@willieee802/zigbee-herdsman/dist/zspec/zcl";
+import type {Header as ZHZclHeader, PowerSource as ZHZclPowerSource} from "@willieee802/zigbee-herdsman/dist/zspec/zcl";
 import type {
     TClusterAttributeKeys,
     TClusterPayload,
@@ -24,6 +24,8 @@ export interface Logger {
 }
 
 export type Range = [number, number];
+export type ValuesOf<T> = T[keyof T];
+export type PowerSource = keyof typeof ZHZclPowerSource;
 export interface KeyValue {
     [s: string]: unknown;
 }
@@ -61,7 +63,7 @@ export interface Fingerprint {
     hardwareVersion?: number;
     manufacturerName?: string;
     modelID?: string;
-    powerSource?: "Battery" | "Mains (single phase)";
+    powerSource?: PowerSource;
     softwareBuildID?: string;
     stackVersion?: number;
     zclVersion?: number;
@@ -72,7 +74,7 @@ export interface Fingerprint {
 }
 export type WhiteLabel =
     | {vendor?: string; model: string; description?: string; fingerprint: Fingerprint[]}
-    | {vendor: string; model: string; description?: string};
+    | {vendor?: string; model: string; description?: string; whiteLabelOf?: string};
 
 export interface MockProperty {
     property: string;
@@ -200,7 +202,7 @@ export interface DefinitionMeta {
     /**
      * see `toZigbee.light_color`
      *
-     * @defaultValue true
+     * @defaultValue false
      */
     supportsEnhancedHue?: boolean | ((entity: Zh.Endpoint) => boolean);
     /**
@@ -311,7 +313,7 @@ type DefinitionFeatures = {
     exposes: DefinitionExposes;
 };
 
-export type Definition = DefinitionMatcher & DefinitionBase & DefinitionConfig & DefinitionFeatures & NonNullable<Pick<DefinitionConfig, "version">>;
+export type Definition = DefinitionMatcher & DefinitionBase & DefinitionConfig & DefinitionFeatures & Required<Pick<DefinitionConfig, "version">>;
 
 export type DefinitionWithExtend = DefinitionMatcher &
     DefinitionBase &
@@ -473,7 +475,7 @@ export namespace Tuya {
             publish?: Publish,
             // biome-ignore lint/suspicious/noExplicitAny: value is validated on per-case basis
             msg?: Fz.Message<any>,
-        ) => number | string | boolean | KeyValue | KeyValue[] | null;
+        ) => number | string | string[] | boolean | KeyValue | KeyValue[] | null;
     }
     export interface MetaTuyaDataPointsMeta {
         skip?: (meta: Tz.Meta) => boolean;

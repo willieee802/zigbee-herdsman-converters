@@ -176,7 +176,7 @@ export const definitions: DefinitionWithExtend[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint("TS0601", ["_TZE204_xdtnpp1a"]),
+        fingerprint: tuya.fingerprint("TS0601", ["_TZE204_xdtnpp1a", "_TZE284_xdtnpp1a"]),
         model: "TRV26",
         vendor: "AVATTO",
         description: "Thermostatic radiator valve",
@@ -232,22 +232,6 @@ export const definitions: DefinitionWithExtend[] = [
         meta: {
             tuyaDatapoints: [
                 [
-                    49,
-                    "running_state",
-                    tuya.valueConverterBasic.lookup({
-                        heat: tuya.enum(1),
-                        idle: tuya.enum(0),
-                    }),
-                ],
-                [
-                    49,
-                    "system_mode",
-                    tuya.valueConverterBasic.lookup({
-                        heat: tuya.enum(1),
-                        off: tuya.enum(0),
-                    }),
-                ],
-                [
                     2,
                     "preset",
                     tuya.valueConverterBasic.lookup({
@@ -259,6 +243,7 @@ export const definitions: DefinitionWithExtend[] = [
                         holiday: tuya.enum(5),
                     }),
                 ],
+                [3, "running_state", tuya.valueConverterBasic.lookup({idle: 1, heat: 0})],
                 [4, "current_heating_setpoint", tuya.valueConverter.divideBy10],
                 [5, "local_temperature", tuya.valueConverter.divideBy10],
                 [6, "battery", tuya.valueConverter.raw],
@@ -268,21 +253,29 @@ export const definitions: DefinitionWithExtend[] = [
                 [14, "window_detection", tuya.valueConverter.raw],
                 [16, "open_window_temperature", tuya.valueConverter.divideBy10],
                 [17, "open_window_time", tuya.valueConverter.raw],
-                [19, "factory_reset", tuya.valueConverter.onOff],
-                [21, "holiday_temperature", tuya.valueConverter.raw],
-                [24, "comfort_temperature", tuya.valueConverter.divideBy10],
-                [25, "eco_temperature", tuya.valueConverter.divideBy10],
                 [17, "schedule_monday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(1)],
                 [18, "schedule_tuesday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(2)],
+                [19, "factory_reset", tuya.valueConverter.onOff],
                 [19, "schedule_wednesday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(3)],
                 [20, "schedule_thursday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(4)],
+                [21, "holiday_temperature", tuya.valueConverter.raw],
                 [21, "schedule_friday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(5)],
                 [22, "schedule_saturday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(6)],
                 [23, "schedule_sunday", tuya.valueConverter.thermostatScheduleDayMultiDPWithDayNumber(7)],
+                [24, "comfort_temperature", tuya.valueConverter.divideBy10],
+                [25, "eco_temperature", tuya.valueConverter.divideBy10],
                 [35, "error_status", tuya.valueConverter.raw],
                 [36, "frost_protection", tuya.valueConverter.onOff],
                 [39, "scale_protection", tuya.valueConverter.raw],
                 [47, "local_temperature_calibration", tuya.valueConverter.localTempCalibration1],
+                [
+                    49,
+                    "system_mode",
+                    tuya.valueConverterBasic.lookup({
+                        heat: tuya.enum(1),
+                        off: tuya.enum(0),
+                    }),
+                ],
                 [101, "uptime", tuya.valueConverter.divideBy10],
                 [102, "descale_countdown", tuya.valueConverter.divideBy10],
             ],
@@ -382,7 +375,15 @@ export const definitions: DefinitionWithExtend[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint("TS0601", ["_TZE204_5cuocqty", "_TZE204_nqqylykc", "_TZE204_2cyb66xl", "_TZE204_tgdnh7pw", "_TZE284_nqqylykc"]),
+        fingerprint: tuya.fingerprint("TS0601", [
+            "_TZE204_5cuocqty",
+            "_TZE204_nqqylykc",
+            "_TZE204_2cyb66xl",
+            "_TZE204_tgdnh7pw",
+            "_TZE284_nqqylykc",
+            "_TZE204_huu3td85",
+            "_TZE284_huu3td85",
+        ]),
         model: "ZDMS16-1",
         vendor: "AVATTO",
         description: "Zigbee Module 1 channel Dimmer",
@@ -406,7 +407,7 @@ export const definitions: DefinitionWithExtend[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint("TS0601", ["_TZE204_o9gyszw2", "_TZE204_jtbgusdc", "_TZE284_jtbgusdc"]),
+        fingerprint: tuya.fingerprint("TS0601", ["_TZE204_o9gyszw2", "_TZE204_jtbgusdc", "_TZE284_jtbgusdc", "_TZE204_fjms2pi9", "_TZE284_fjms2pi9"]),
         model: "ZDMS16-2",
         vendor: "AVATTO",
         description: "Zigbee Module 2 channels Dimmer",
@@ -447,7 +448,11 @@ export const definitions: DefinitionWithExtend[] = [
         model: "LZWSM16-1",
         description: "1 gang switch module - (without neutral)",
         vendor: "AVATTO",
-        extend: [tuya.modernExtend.tuyaOnOff({switchType: true, onOffCountdown: true}), m.forcePowerSource({powerSource: "Mains (single phase)"})],
+        extend: [
+            tuya.modernExtend.tuyaBase(),
+            tuya.modernExtend.tuyaOnOff({switchType: true, onOffCountdown: true}),
+            m.forcePowerSource({powerSource: "Mains (single phase)"}),
+        ],
         configure: async (device, coordinatorEndpoint) => {
             await tuya.configureMagicPacket(device, coordinatorEndpoint);
             await reporting.bind(device.getEndpoint(1), coordinatorEndpoint, ["genOnOff"]);

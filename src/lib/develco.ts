@@ -31,6 +31,17 @@ export interface DevelcoAirQuality {
 export interface DevelcoIasZone {
     attributes: {
         develcoZoneStatusInterval: number;
+        develcoAlarmOffDelay: number;
+    };
+    commands: never;
+    commandResponses: never;
+}
+
+export interface DevelcoSeMetering {
+    attributes: {
+        develcoPulseConfiguration: number;
+        develcoCurrentSummation: number;
+        develcoInterfaceMode?: number;
     };
     commands: never;
     commandResponses: never;
@@ -39,22 +50,58 @@ export interface DevelcoIasZone {
 export const develcoModernExtend = {
     addCustomClusterManuSpecificDevelcoGenBasic: () =>
         deviceAddCustomCluster("genBasic", {
-            ID: 0x0000,
+            name: "genBasic",
+            ID: Zcl.Clusters.genBasic.ID,
             attributes: {
-                develcoPrimarySwVersion: {ID: 0x8000, type: Zcl.DataType.OCTET_STR, manufacturerCode: Zcl.ManufacturerCode.DEVELCO, write: true},
-                develcoPrimaryHwVersion: {ID: 0x8020, type: Zcl.DataType.OCTET_STR, manufacturerCode: Zcl.ManufacturerCode.DEVELCO, write: true},
-                develcoLedControl: {ID: 0x8100, type: Zcl.DataType.BITMAP8, manufacturerCode: Zcl.ManufacturerCode.DEVELCO, write: true},
-                develcoTxPower: {ID: 0x8101, type: Zcl.DataType.ENUM8, manufacturerCode: Zcl.ManufacturerCode.DEVELCO, write: true, max: 0xff},
+                develcoPrimarySwVersion: {
+                    name: "develcoPrimarySwVersion",
+                    ID: 0x8000,
+                    type: Zcl.DataType.OCTET_STR,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                },
+                develcoPrimaryHwVersion: {
+                    name: "develcoPrimaryHwVersion",
+                    ID: 0x8020,
+                    type: Zcl.DataType.OCTET_STR,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                },
+                develcoLedControl: {
+                    name: "develcoLedControl",
+                    ID: 0x8100,
+                    type: Zcl.DataType.BITMAP8,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                },
+                develcoTxPower: {
+                    name: "develcoTxPower",
+                    ID: 0x8101,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                    max: 0xff,
+                },
             },
             commands: {},
             commandsResponse: {},
         }),
     addCustomClusterManuSpecificDevelcoIasZone: () =>
         deviceAddCustomCluster("ssIasZone", {
+            name: "ssIasZone",
             ID: Zcl.Clusters.ssIasZone.ID,
             attributes: {
                 develcoZoneStatusInterval: {
+                    name: "develcoZoneStatusInterval",
                     ID: 0x8000,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                    max: 0xffff,
+                },
+                develcoAlarmOffDelay: {
+                    name: "develcoAlarmOffDelay",
+                    ID: 0x8001,
                     type: Zcl.DataType.UINT16,
                     manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
                     write: true,
@@ -66,13 +113,47 @@ export const develcoModernExtend = {
         }),
     addCustomClusterManuSpecificDevelcoAirQuality: () =>
         deviceAddCustomCluster("manuSpecificDevelcoAirQuality", {
+            name: "manuSpecificDevelcoAirQuality",
             ID: 0xfc03,
             manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
             attributes: {
-                measuredValue: {ID: 0x0000, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
-                minMeasuredValue: {ID: 0x0001, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
-                maxMeasuredValue: {ID: 0x0002, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
-                resolution: {ID: 0x0003, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                measuredValue: {name: "measuredValue", ID: 0x0000, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                minMeasuredValue: {name: "minMeasuredValue", ID: 0x0001, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                maxMeasuredValue: {name: "maxMeasuredValue", ID: 0x0002, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                resolution: {name: "resolution", ID: 0x0003, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+            },
+            commands: {},
+            commandsResponse: {},
+        }),
+    addCustomDevelcoSeMeteringCluster: () =>
+        deviceAddCustomCluster("seMetering", {
+            name: "seMetering",
+            ID: Zcl.Clusters.seMetering.ID,
+            attributes: {
+                develcoPulseConfiguration: {
+                    name: "develcoPulseConfiguration",
+                    ID: 0x0300,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                    max: 0xffff,
+                },
+                develcoCurrentSummation: {
+                    name: "develcoCurrentSummation",
+                    ID: 0x0301,
+                    type: Zcl.DataType.UINT48,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                    max: 0xffffffffffff,
+                },
+                develcoInterfaceMode: {
+                    name: "develcoInterfaceMode",
+                    ID: 0x0302,
+                    type: Zcl.DataType.ENUM16,
+                    manufacturerCode: Zcl.ManufacturerCode.DEVELCO,
+                    write: true,
+                    max: 0xffff,
+                },
             },
             commands: {},
             commandsResponse: {},
@@ -220,7 +301,7 @@ export const develcoModernExtend = {
             ...args,
         }),
     currentSummation: (args?: Partial<NumericArgs<"seMetering">>) =>
-        numeric({
+        numeric<"seMetering", DevelcoSeMetering>({
             name: "current_summation",
             cluster: "seMetering",
             attribute: "develcoCurrentSummation",
@@ -231,7 +312,7 @@ export const develcoModernExtend = {
             ...args,
         }),
     pulseConfiguration: (args?: Partial<NumericArgs<"seMetering">>) =>
-        numeric({
+        numeric<"seMetering", DevelcoSeMetering>({
             name: "pulse_configuration",
             cluster: "seMetering",
             attribute: "develcoPulseConfiguration",

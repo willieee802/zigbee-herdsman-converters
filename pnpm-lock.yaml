@@ -7,8 +7,8 @@ onlyBuiltDependencies:
 
 dependencies:
   '@willieee802/zigbee-herdsman':
-    specifier: ^0.49.0
-    version: 0.49.0
+    specifier: ^0.50.0
+    version: 0.50.0
   iconv-lite:
     specifier: ^0.7.2
     version: 0.7.2
@@ -174,6 +174,10 @@ packages:
     os: [win32]
     dev: true
     optional: true
+
+  /@date-fns/tz@1.4.1:
+    resolution: {integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==}
+    dev: false
 
   /@esbuild/aix-ppc64@0.25.12:
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -783,9 +787,10 @@ packages:
       tinyrainbow: 2.0.0
     dev: true
 
-  /@willieee802/zigbee-herdsman@0.49.0:
-    resolution: {integrity: sha512-h8RdDalF3bd8DIM0WpVi49WiaDbkeCxs+kylljfQQ5y19XR6xVtGkUiMD9DFNSn3XDls2+UEvdDLu0lzHMRENg==}
+  /@willieee802/zigbee-herdsman@0.50.0:
+    resolution: {integrity: sha512-jOB+jwBl74E/ID4lzlLJAW8D0YiQyoXSJxHILoMBKOObUhqmO30OhvvWJBV1OMzCviVKRZ7kPJT4UYZARuV0gg==}
     dependencies:
+      '@date-fns/tz': 1.4.1
       '@serialport/bindings-cpp': 12.0.1
       '@serialport/parser-delimiter': 12.0.0
       '@serialport/stream': 12.0.0
@@ -796,6 +801,7 @@ packages:
       mixin-deep: 2.0.1
       mz: 2.7.0
       slip: 1.0.2
+      zigbee-on-host: 0.2.4
     transitivePeerDependencies:
       - supports-color
     dev: false
@@ -1753,3 +1759,8 @@ packages:
       string-width: 5.1.2
       strip-ansi: 7.2.0
     dev: true
+
+  /zigbee-on-host@0.2.4:
+    resolution: {integrity: sha512-NIG6CWp+Yfn7PjqEIRvenHqpwT1U7rSkyimnFOUIFpnmxQOJKrmcwWDfn6WjbU/YIYYWSQPlj+g13icu1xwlyg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    dev: false

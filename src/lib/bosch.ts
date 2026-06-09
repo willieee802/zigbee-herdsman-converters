@@ -1,7 +1,6 @@
 import {Zcl, ZSpec} from "@willieee802/zigbee-herdsman";
 import {Endpoint} from "@willieee802/zigbee-herdsman/dist/controller/model";
 import type {SendPolicy} from "@willieee802/zigbee-herdsman/dist/controller/tstype";
-import type {TPartialClusterAttributes} from "@willieee802/zigbee-herdsman/dist/zspec/zcl/definition/clusters-types";
 import * as fz from "../converters/fromZigbee";
 import * as tz from "../converters/toZigbee";
 import * as exposes from "../lib/exposes";
@@ -113,27 +112,20 @@ export const boschGeneralExtend = {
     handleZclVersionReadRequest: (): ModernExtend => {
         const onEvent: OnEvent.Handler[] = [
             (event) => {
-                if (event.type !== "start") {
-                    return;
-                }
+                if (event.type === "start") {
+                    event.data.device.customReadResponse = (frame, endpoint) => {
+                        if (frame.isCluster("genBasic") && frame.payload.some((i: {attrId: number}) => i.attrId === 0x0000)) {
+                            // XXX: we're replying to specific attribute, which could be incorrect (not based on the request attrIds)
+                            endpoint.readResponse("genBasic", frame.header.transactionSequenceNumber, {zclVersion: 1}).catch((e) => {
+                                logger.warning(`Custom zclVersion response failed for '${event.data.device.ieeeAddr}': ${e}`, NS);
+                            });
 
-                event.data.device.customReadResponse = (frame, endpoint) => {
-                    const isZclVersionRequest = frame.isCluster("genBasic") && frame.payload.find((i: {attrId: number}) => i.attrId === 0);
+                            return true;
+                        }
 
-                    if (!isZclVersionRequest) {
                         return false;
-                    }
-
-                    const payload: TPartialClusterAttributes<"genBasic"> = {
-                        zclVersion: 1,
                     };
-
-                    endpoint.readResponse(frame.cluster.name, frame.header.transactionSequenceNumber, payload).catch((e) => {
-                        logger.warning(`Custom zclVersion response failed for '${event.data.device.ieeeAddr}': ${e}`, NS);
-                    });
-
-                    return true;
-                };
+                }
             },
         ];
 
@@ -177,10 +169,12 @@ interface BoschGeneralEnergyDeviceCluster {
 export const boschGeneralEnergyDeviceExtend = {
     customMeteringCluster: () =>
         m.deviceAddCustomCluster("seMetering", {
+            name: "seMetering",
             ID: Zcl.Clusters.seMetering.ID,
             attributes: {},
             commands: {
                 resetEnergyMeters: {
+                    name: "resetEnergyMeters",
                     ID: 0x80,
                     parameters: [],
                 },
@@ -1446,6 +1440,15 @@ export const boschBmctExtend = {
                 },
             },
         ];
+
+        const reportActionExtend = boschBmctExtend.reportSwitchAction({
+            switchTypeLookup: stateSwitchType,
+            hasDualSwitchInputs: true,
+        });
+        if (reportActionExtend.fromZigbee !== undefined) {
+            fromZigbee.push(...reportActionExtend.fromZigbee);
+        }
+
         return {
             fromZigbee,
             toZigbee,
@@ -1519,9 +1522,11 @@ export interface BoschBsirIasWdCluster {
 export const boschBsirExtend = {
     customPowerCfgCluster: () =>
         m.deviceAddCustomCluster("genPowerCfg", {
+            name: "genPowerCfg",
             ID: Zcl.Clusters.genPowerCfg.ID,
             attributes: {
                 solarPanelVoltage: {
+                    name: "solarPanelVoltage",
                     ID: 0xa000,
                     type: Zcl.DataType.UINT16,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1529,6 +1534,7 @@ export const boschBsirExtend = {
                     max: 0xffff,
                 },
                 unknownAttribute: {
+                    name: "unknownAttribute",
                     ID: 0xa001,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1536,6 +1542,7 @@ export const boschBsirExtend = {
                     max: 0xff,
                 },
                 primaryPowerSource: {
+                    name: "primaryPowerSource",
                     ID: 0xa002,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1548,9 +1555,11 @@ export const boschBsirExtend = {
         }),
     customIasZoneCluster: () =>
         m.deviceAddCustomCluster("ssIasZone", {
+            name: "ssIasZone",
             ID: Zcl.Clusters.ssIasZone.ID,
             attributes: {
                 currentPowerSource: {
+                    name: "currentPowerSource",
                     ID: 0xa001,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1560,6 +1569,7 @@ export const boschBsirExtend = {
             },
             commands: {
                 acknowledgeStatusChange: {
+                    name: "acknowledgeStatusChange",
                     ID: 0xf3,
                     parameters: [{name: "data", type: Zcl.DataType.UINT8, max: 0xff}],
                 },
@@ -1568,18 +1578,69 @@ export const boschBsirExtend = {
         }),
     customIasWdCluster: () =>
         m.deviceAddCustomCluster("ssIasWd", {
+            name: "ssIasWd",
             ID: Zcl.Clusters.ssIasWd.ID,
             attributes: {
-                sirenDuration: {ID: 0xa000, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                alarmMode: {ID: 0xa001, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                sirenVolume: {ID: 0xa002, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                sirenDelay: {ID: 0xa003, type: Zcl.DataType.UINT16, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xffff},
-                lightDelay: {ID: 0xa004, type: Zcl.DataType.UINT16, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xffff},
-                lightDuration: {ID: 0xa005, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                deviceState: {ID: 0xa006, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                sirenDuration: {
+                    name: "sirenDuration",
+                    ID: 0xa000,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                alarmMode: {
+                    name: "alarmMode",
+                    ID: 0xa001,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                sirenVolume: {
+                    name: "sirenVolume",
+                    ID: 0xa002,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                sirenDelay: {
+                    name: "sirenDelay",
+                    ID: 0xa003,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xffff,
+                },
+                lightDelay: {
+                    name: "lightDelay",
+                    ID: 0xa004,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xffff,
+                },
+                lightDuration: {
+                    name: "lightDuration",
+                    ID: 0xa005,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                deviceState: {
+                    name: "deviceState",
+                    ID: 0xa006,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
             },
             commands: {
                 alarmControl: {
+                    name: "alarmControl",
                     ID: 0xf0,
                     parameters: [{name: "data", type: Zcl.DataType.UINT8, max: 0xff}],
                 },
@@ -1936,9 +1997,11 @@ interface BoschDoorWindowContactCluster {
 export const boschDoorWindowContactExtend = {
     doorWindowContactCluster: () =>
         m.deviceAddCustomCluster("boschDoorWindowContactCluster", {
+            name: "boschDoorWindowContactCluster",
             ID: 0xfcad,
             attributes: {
                 breakFunctionEnabled: {
+                    name: "breakFunctionEnabled",
                     ID: 0x0000,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1946,6 +2009,7 @@ export const boschDoorWindowContactExtend = {
                     max: 0xff,
                 },
                 breakFunctionState: {
+                    name: "breakFunctionState",
                     ID: 0x0001,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1953,6 +2017,7 @@ export const boschDoorWindowContactExtend = {
                     max: 0xff,
                 },
                 breakFunctionTimeout: {
+                    name: "breakFunctionTimeout",
                     ID: 0x0002,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1960,6 +2025,7 @@ export const boschDoorWindowContactExtend = {
                     max: 0xff,
                 },
                 vibrationDetectionEnabled: {
+                    name: "vibrationDetectionEnabled",
                     ID: 0x0004,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -1967,16 +2033,45 @@ export const boschDoorWindowContactExtend = {
                     max: 0xff,
                 },
                 vibrationDetectionSensitivity: {
+                    name: "vibrationDetectionSensitivity",
                     ID: 0x0005,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
                     write: true,
                     max: 0xff,
                 },
-                unknownOne: {ID: 0x0007, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                unknownTwo: {ID: 0x0008, type: Zcl.DataType.UINT16, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xffff},
-                unknownThree: {ID: 0x0009, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                unknownFour: {ID: 0x000a, type: Zcl.DataType.UINT8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                unknownOne: {
+                    name: "unknownOne",
+                    ID: 0x0007,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                unknownTwo: {
+                    name: "unknownTwo",
+                    ID: 0x0008,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xffff,
+                },
+                unknownThree: {
+                    name: "unknownThree",
+                    ID: 0x0009,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                unknownFour: {
+                    name: "unknownFour",
+                    ID: 0x000a,
+                    type: Zcl.DataType.UINT8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
             },
             commands: {},
             commandsResponse: {},
@@ -2537,14 +2632,19 @@ interface BoschWaterAlarmCluster {
 export const boschWaterAlarmExtend = {
     waterAlarmCluster: () =>
         m.deviceAddCustomCluster("boschWaterAlarm", {
+            name: "boschWaterAlarm",
             ID: 0xfcac,
             manufacturerCode: manufacturerOptions.manufacturerCode,
             attributes: {
-                alarmOnMotion: {ID: 0x0003, type: Zcl.DataType.BOOLEAN, write: true},
+                alarmOnMotion: {name: "alarmOnMotion", ID: 0x0003, type: Zcl.DataType.BOOLEAN, write: true},
             },
             commands: {
-                muteAlarmControl: {ID: 0x00, parameters: [{name: "data", type: Zcl.DataType.UINT8, max: 0xff}]},
-                muteAlarmControlResponse: {ID: 0x01, parameters: [{name: "data", type: Zcl.DataType.ENUM8, max: 0xff}]},
+                muteAlarmControl: {name: "muteAlarmControl", ID: 0x00, parameters: [{name: "data", type: Zcl.DataType.UINT8, max: 0xff}]},
+                muteAlarmControlResponse: {
+                    name: "muteAlarmControlResponse",
+                    ID: 0x01,
+                    parameters: [{name: "data", type: Zcl.DataType.ENUM8, max: 0xff}],
+                },
             },
             commandsResponse: {},
         }),
@@ -2728,9 +2828,11 @@ interface BoschSmokeAlarmIasZoneCluster {
 export const boschSmokeAlarmExtend = {
     customIasZoneCluster: () =>
         m.deviceAddCustomCluster("ssIasZone", {
+            name: "ssIasZone",
             ID: Zcl.Clusters.ssIasZone.ID,
             attributes: {
                 unknownAttribute1: {
+                    name: "unknownAttribute1",
                     ID: 0x8f01,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -2738,6 +2840,7 @@ export const boschSmokeAlarmExtend = {
                     max: 0xff,
                 },
                 unknownAttribute2: {
+                    name: "unknownAttribute2",
                     ID: 0x8f06,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -2747,6 +2850,7 @@ export const boschSmokeAlarmExtend = {
             },
             commands: {
                 alarmControl: {
+                    name: "alarmControl",
                     ID: 0x80,
                     parameters: [
                         {name: "alarmMode", type: Zcl.DataType.ENUM8, max: 0xff},
@@ -2992,15 +3096,16 @@ interface BoschSmartPlugCluster extends BoschGeneralEnergyDeviceCluster {
 export const boschSmartPlugExtend = {
     smartPlugCluster: () =>
         m.deviceAddCustomCluster("boschEnergyDevice", {
+            name: "boschEnergyDevice",
             ID: 0xfca0,
             manufacturerCode: manufacturerOptions.manufacturerCode,
             attributes: {
-                autoOffEnabled: {ID: 0x0006, type: Zcl.DataType.BOOLEAN, write: true},
-                autoOffTime: {ID: 0x0007, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
-                ledBrightness: {ID: 0x002c, type: Zcl.DataType.UINT8, write: true, max: 0xff},
-                energySavingModeEnabled: {ID: 0x002d, type: Zcl.DataType.BOOLEAN, write: true},
-                energySavingModeThreshold: {ID: 0x002e, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
-                energySavingModeTimer: {ID: 0x002f, type: Zcl.DataType.UINT32, write: true, max: 0xffffffff},
+                autoOffEnabled: {name: "autoOffEnabled", ID: 0x0006, type: Zcl.DataType.BOOLEAN, write: true},
+                autoOffTime: {name: "autoOffTime", ID: 0x0007, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                ledBrightness: {name: "ledBrightness", ID: 0x002c, type: Zcl.DataType.UINT8, write: true, max: 0xff},
+                energySavingModeEnabled: {name: "energySavingModeEnabled", ID: 0x002d, type: Zcl.DataType.BOOLEAN, write: true},
+                energySavingModeThreshold: {name: "energySavingModeThreshold", ID: 0x002e, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                energySavingModeTimer: {name: "energySavingModeTimer", ID: 0x002f, type: Zcl.DataType.UINT32, write: true, max: 0xffffffff},
             },
             commands: {},
             commandsResponse: {},
@@ -3228,11 +3333,27 @@ const boschThermostatLookup = {
 export const boschThermostatExtend = {
     customThermostatCluster: () =>
         m.deviceAddCustomCluster("hvacThermostat", {
+            name: "hvacThermostat",
             ID: Zcl.Clusters.hvacThermostat.ID,
             attributes: {
-                operatingMode: {ID: 0x4007, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                heatingDemand: {ID: 0x4020, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                operatingMode: {
+                    name: "operatingMode",
+                    ID: 0x4007,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                heatingDemand: {
+                    name: "heatingDemand",
+                    ID: 0x4020,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
                 valveAdaptStatus: {
+                    name: "valveAdaptStatus",
                     ID: 0x4022,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3240,6 +3361,7 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 unknownAttribute0: {
+                    name: "unknownAttribute0",
                     ID: 0x4025,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3247,6 +3369,7 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 remoteTemperature: {
+                    name: "remoteTemperature",
                     ID: 0x4040,
                     type: Zcl.DataType.INT16,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3254,6 +3377,7 @@ export const boschThermostatExtend = {
                     min: -32768,
                 },
                 unknownAttribute1: {
+                    name: "unknownAttribute1",
                     ID: 0x4041,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3261,22 +3385,39 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 windowOpenMode: {
+                    name: "windowOpenMode",
                     ID: 0x4042,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
                     write: true,
                     max: 0xff,
                 },
-                boostHeating: {ID: 0x4043, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                boostHeating: {
+                    name: "boostHeating",
+                    ID: 0x4043,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
                 cableSensorTemperature: {
+                    name: "cableSensorTemperature",
                     ID: 0x4052,
                     type: Zcl.DataType.INT16,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
                     write: true,
                     min: -32768,
                 },
-                valveType: {ID: 0x4060, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                valveType: {
+                    name: "valveType",
+                    ID: 0x4060,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
                 unknownAttribute2: {
+                    name: "unknownAttribute2",
                     ID: 0x4061,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3284,15 +3425,30 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 cableSensorMode: {
+                    name: "cableSensorMode",
                     ID: 0x4062,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
                     write: true,
                     max: 0xff,
                 },
-                heaterType: {ID: 0x4063, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
-                errorState: {ID: 0x5000, type: Zcl.DataType.BITMAP8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true},
+                heaterType: {
+                    name: "heaterType",
+                    ID: 0x4063,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
+                errorState: {
+                    name: "errorState",
+                    ID: 0x5000,
+                    type: Zcl.DataType.BITMAP8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                },
                 automaticValveAdapt: {
+                    name: "automaticValveAdapt",
                     ID: 0x5010,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3301,23 +3457,33 @@ export const boschThermostatExtend = {
                 },
             },
             commands: {
-                calibrateValve: {ID: 0x41, parameters: []},
+                calibrateValve: {name: "calibrateValve", ID: 0x41, parameters: []},
             },
             commandsResponse: {},
         }),
     customUserInterfaceCfgCluster: () =>
         m.deviceAddCustomCluster("hvacUserInterfaceCfg", {
+            name: "hvacUserInterfaceCfg",
             ID: Zcl.Clusters.hvacUserInterfaceCfg.ID,
             attributes: {
                 displayOrientation: {
+                    name: "displayOrientation",
                     ID: 0x400b,
                     type: Zcl.DataType.UINT8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
                     write: true,
                     max: 0xff,
                 },
-                activityLed: {ID: 0x4033, type: Zcl.DataType.ENUM8, manufacturerCode: manufacturerOptions.manufacturerCode, write: true, max: 0xff},
+                activityLed: {
+                    name: "activityLed",
+                    ID: 0x4033,
+                    type: Zcl.DataType.ENUM8,
+                    manufacturerCode: manufacturerOptions.manufacturerCode,
+                    write: true,
+                    max: 0xff,
+                },
                 displayedTemperature: {
+                    name: "displayedTemperature",
                     ID: 0x4039,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3325,6 +3491,7 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 displaySwitchOnDuration: {
+                    name: "displaySwitchOnDuration",
                     ID: 0x403a,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
@@ -3332,6 +3499,7 @@ export const boschThermostatExtend = {
                     max: 0xff,
                 },
                 displayBrightness: {
+                    name: "displayBrightness",
                     ID: 0x403b,
                     type: Zcl.DataType.ENUM8,
                     manufacturerCode: manufacturerOptions.manufacturerCode,
