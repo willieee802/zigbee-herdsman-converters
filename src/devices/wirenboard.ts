@@ -63,6 +63,40 @@ interface SprutIrBlaster {
     commandResponses: never;
 }
 
+interface SprutMsRelativeHumidity {
+    attributes: {
+        sprutHeater?: number;
+    };
+    commands: never;
+    commandResponses: never;
+}
+
+interface SprutMsOccupancySensing {
+    attributes: {
+        sprutOccupancyLevel?: number;
+        sprutOccupancySensitivity?: number;
+    };
+    commands: never;
+    commandResponses: never;
+}
+
+interface SprutMsTemperatureMeasurement {
+    attributes: {
+        sprutTemperatureOffset?: number;
+    };
+    commands: never;
+    commandResponses: never;
+}
+
+interface SprutMsCO2 {
+    attributes: {
+        sprutCO2Calibration?: number;
+        sprutCO2AutoCalibration?: number;
+    };
+    commands: never;
+    commandResponses: never;
+}
+
 const sprutCode = Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE;
 
 const manufacturerOptions = {manufacturerCode: sprutCode};
@@ -89,7 +123,7 @@ const fzLocal = {
                 return {occupancy_level: msg.data.sprutOccupancyLevel};
             }
         },
-    } satisfies Fz.Converter<"msOccupancySensing", undefined, ["readResponse", "attributeReport"]>,
+    } satisfies Fz.Converter<"msOccupancySensing", SprutMsOccupancySensing, ["readResponse", "attributeReport"]>,
     voc: {
         cluster: "sprutVoc",
         type: ["readResponse", "attributeReport"],
@@ -137,7 +171,7 @@ const fzLocal = {
         convert: (model, msg, publish, options, meta) => {
             return {occupancy_sensitivity: msg.data.sprutOccupancySensitivity};
         },
-    } satisfies Fz.Converter<"msOccupancySensing", undefined, ["readResponse", "attributeReport"]>,
+    } satisfies Fz.Converter<"msOccupancySensing", SprutMsOccupancySensing, ["readResponse", "attributeReport"]>,
     noise_detect_level: {
         cluster: "sprutNoise",
         type: ["readResponse", "attributeReport"],
@@ -156,7 +190,7 @@ const fzLocal = {
                 return {co2_manual_calibration: switchActionValues[msg.data.sprutCO2Calibration]};
             }
         },
-    } satisfies Fz.Converter<"msCO2", undefined, ["attributeReport", "readResponse"]>,
+    } satisfies Fz.Converter<"msCO2", SprutMsCO2, ["attributeReport", "readResponse"]>,
     th_heater: {
         cluster: "msRelativeHumidity",
         type: ["attributeReport", "readResponse"],
@@ -165,7 +199,7 @@ const fzLocal = {
                 return {th_heater: switchActionValues[msg.data.sprutHeater]};
             }
         },
-    } satisfies Fz.Converter<"msRelativeHumidity", undefined, ["attributeReport", "readResponse"]>,
+    } satisfies Fz.Converter<"msRelativeHumidity", SprutMsRelativeHumidity, ["attributeReport", "readResponse"]>,
 };
 
 const tzLocal = {
@@ -238,11 +272,15 @@ const tzLocal = {
             let number = toNumber(value, "occupancy_sensitivity");
             number *= 1;
             const options = getOptions(meta.mapped, entity, manufacturerOptions);
-            await entity.write("msOccupancySensing", {sprutOccupancySensitivity: number}, options);
+            await entity.write<"msOccupancySensing", SprutMsOccupancySensing>("msOccupancySensing", {sprutOccupancySensitivity: number}, options);
             return {state: {[key]: number}};
         },
         convertGet: async (entity, key, meta) => {
-            await entity.read("msOccupancySensing", ["sprutOccupancySensitivity"], manufacturerOptions);
+            await entity.read<"msOccupancySensing", SprutMsOccupancySensing>(
+                "msOccupancySensing",
+                ["sprutOccupancySensitivity"],
+                manufacturerOptions,
+            );
         },
     } satisfies Tz.Converter,
     noise_detect_level: {
@@ -265,7 +303,11 @@ const tzLocal = {
             number *= 1;
             const newValue = number * 100.0;
             const options = getOptions(meta.mapped, entity, manufacturerOptions);
-            await entity.write("msTemperatureMeasurement", {sprutTemperatureOffset: newValue}, options);
+            await entity.write<"msTemperatureMeasurement", SprutMsTemperatureMeasurement>(
+                "msTemperatureMeasurement",
+                {sprutTemperatureOffset: newValue},
+                options,
+            );
             return {state: {[key]: number}};
         },
     } satisfies Tz.Converter,
@@ -280,12 +322,12 @@ const tzLocal = {
                 [getFromLookup(key, co2Lookup)]: newValue,
             };
 
-            await entity.write("msCO2", payload, options);
+            await entity.write<"msCO2", SprutMsCO2>("msCO2", payload, options);
 
             return {state: {[key]: value}};
         },
         convertGet: async (entity, key, meta) => {
-            await entity.read("msCO2", [getFromLookup(key, co2Lookup)], manufacturerOptions);
+            await entity.read<"msCO2", SprutMsCO2>("msCO2", [getFromLookup(key, co2Lookup)], manufacturerOptions);
         },
     } satisfies Tz.Converter,
     th_heater: {
@@ -294,12 +336,12 @@ const tzLocal = {
             assertString(value, "th_heater");
             const newValue = switchActionValues.indexOf(value);
             const options = getOptions(meta.mapped, entity, manufacturerOptions);
-            await entity.write("msRelativeHumidity", {sprutHeater: newValue}, options);
+            await entity.write<"msRelativeHumidity", SprutMsRelativeHumidity>("msRelativeHumidity", {sprutHeater: newValue}, options);
 
             return {state: {[key]: value}};
         },
         convertGet: async (entity, key, meta) => {
-            await entity.read("msRelativeHumidity", ["sprutHeater"], manufacturerOptions);
+            await entity.read<"msRelativeHumidity", SprutMsRelativeHumidity>("msRelativeHumidity", ["sprutHeater"], manufacturerOptions);
         },
     } satisfies Tz.Converter,
 };
@@ -307,41 +349,126 @@ const tzLocal = {
 const sprutModernExtend = {
     addSprutVocCluster: () =>
         m.deviceAddCustomCluster("sprutVoc", {
+            name: "sprutVoc",
             ID: 0x6601,
             manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
             attributes: {
-                voc: {ID: 0x6600, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                voc: {name: "voc", ID: 0x6600, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
             },
             commands: {},
             commandsResponse: {},
         }),
     addSprutNoiseCluster: () =>
         m.deviceAddCustomCluster("sprutNoise", {
+            name: "sprutNoise",
             ID: 0x6602,
             manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
             attributes: {
-                noise: {ID: 0x6600, type: Zcl.DataType.SINGLE_PREC, write: true},
-                noiseDetected: {ID: 0x6601, type: Zcl.DataType.BITMAP8, write: true},
-                noiseDetectLevel: {ID: 0x6602, type: Zcl.DataType.SINGLE_PREC, write: true},
-                noiseAfterDetectDelay: {ID: 0x6603, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
+                noise: {name: "noise", ID: 0x6600, type: Zcl.DataType.SINGLE_PREC, write: true},
+                noiseDetected: {name: "noiseDetected", ID: 0x6601, type: Zcl.DataType.BITMAP8, write: true},
+                noiseDetectLevel: {name: "noiseDetectLevel", ID: 0x6602, type: Zcl.DataType.SINGLE_PREC, write: true},
+                noiseAfterDetectDelay: {name: "noiseAfterDetectDelay", ID: 0x6603, type: Zcl.DataType.UINT16, write: true, max: 0xffff},
             },
             commands: {},
             commandsResponse: {},
         }),
     addSprutIrBlasterCluster: () =>
         m.deviceAddCustomCluster("sprutIrBlaster", {
+            name: "sprutIrBlaster",
             ID: 0x6603,
             manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
             attributes: {},
             commands: {
-                playStore: {ID: 0x00, parameters: [{name: "param", type: Zcl.DataType.UINT8, max: 0xff}]},
-                learnStart: {ID: 0x01, parameters: [{name: "value", type: Zcl.DataType.UINT8, max: 0xff}]},
-                learnStop: {ID: 0x02, parameters: [{name: "value", type: Zcl.DataType.UINT8, max: 0xff}]},
-                clearStore: {ID: 0x03, parameters: []},
-                playRam: {ID: 0x04, parameters: []},
-                learnRamStart: {ID: 0x05, parameters: []},
-                learnRamStop: {ID: 0x06, parameters: []},
+                playStore: {name: "playStore", ID: 0x00, parameters: [{name: "param", type: Zcl.DataType.UINT8, max: 0xff}]},
+                learnStart: {name: "learnStart", ID: 0x01, parameters: [{name: "value", type: Zcl.DataType.UINT8, max: 0xff}]},
+                learnStop: {name: "learnStop", ID: 0x02, parameters: [{name: "value", type: Zcl.DataType.UINT8, max: 0xff}]},
+                clearStore: {name: "clearStore", ID: 0x03, parameters: []},
+                playRam: {name: "playRam", ID: 0x04, parameters: []},
+                learnRamStart: {name: "learnRamStart", ID: 0x05, parameters: []},
+                learnRamStop: {name: "learnRamStop", ID: 0x06, parameters: []},
             },
+            commandsResponse: {},
+        }),
+    addSprutMsRelativeHumidityCluster: () =>
+        m.deviceAddCustomCluster("msRelativeHumidity", {
+            name: "msRelativeHumidity",
+            ID: Zcl.Clusters.msRelativeHumidity.ID,
+            attributes: {
+                sprutHeater: {
+                    name: "sprutHeater",
+                    ID: 0x6600,
+                    type: Zcl.DataType.BOOLEAN,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                },
+            },
+            commands: {},
+            commandsResponse: {},
+        }),
+    addSprutMsOccupancySensingCluster: () =>
+        m.deviceAddCustomCluster("msOccupancySensing", {
+            name: "msOccupancySensing",
+            ID: Zcl.Clusters.msOccupancySensing.ID,
+            attributes: {
+                sprutOccupancyLevel: {
+                    name: "sprutOccupancyLevel",
+                    ID: 0x6600,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                    max: 0xffff,
+                },
+                sprutOccupancySensitivity: {
+                    name: "sprutOccupancySensitivity",
+                    ID: 0x6601,
+                    type: Zcl.DataType.UINT16,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                    max: 0xffff,
+                },
+            },
+            commands: {},
+            commandsResponse: {},
+        }),
+    addSprutMsTemperatureMeasurementCluster: () =>
+        m.deviceAddCustomCluster("msTemperatureMeasurement", {
+            name: "msTemperatureMeasurement",
+            ID: Zcl.Clusters.msTemperatureMeasurement.ID,
+            attributes: {
+                sprutTemperatureOffset: {
+                    name: "sprutTemperatureOffset",
+                    ID: 0x6600,
+                    type: Zcl.DataType.INT16,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                    min: -32768,
+                    max: 32767,
+                },
+            },
+            commands: {},
+            commandsResponse: {},
+        }),
+    addSprutMsCO2Cluster: () =>
+        m.deviceAddCustomCluster("msCO2", {
+            name: "msCO2",
+            ID: Zcl.Clusters.msCO2.ID,
+            attributes: {
+                sprutCO2Calibration: {
+                    name: "sprutCO2Calibration",
+                    ID: 0x6600,
+                    type: Zcl.DataType.BOOLEAN,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                },
+                sprutCO2AutoCalibration: {
+                    name: "sprutCO2AutoCalibration",
+                    ID: 0x6601,
+                    type: Zcl.DataType.BOOLEAN,
+                    manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
+                    write: true,
+                },
+            },
+            commands: {},
             commandsResponse: {},
         }),
     sprutActivityIndicator: (args?: Partial<m.BinaryArgs<"genBinaryOutput">>) =>
@@ -386,8 +513,8 @@ const sprutModernExtend = {
             entityCategory: "config",
             ...args,
         }),
-    sprutTemperatureOffset: (args?: Partial<m.NumericArgs<"msTemperatureMeasurement">>) =>
-        m.numeric({
+    sprutTemperatureOffset: (args?: Partial<m.NumericArgs<"msTemperatureMeasurement", SprutMsTemperatureMeasurement>>) =>
+        m.numeric<"msTemperatureMeasurement", SprutMsTemperatureMeasurement>({
             name: "temperature_offset",
             cluster: "msTemperatureMeasurement",
             attribute: "sprutTemperatureOffset",
@@ -401,8 +528,8 @@ const sprutModernExtend = {
             zigbeeCommandOptions: manufacturerOptions,
             ...args,
         }),
-    sprutThHeater: (args?: Partial<m.BinaryArgs<"msRelativeHumidity">>) =>
-        m.binary({
+    sprutThHeater: (args?: Partial<m.BinaryArgs<"msRelativeHumidity", SprutMsRelativeHumidity>>) =>
+        m.binary<"msRelativeHumidity", SprutMsRelativeHumidity>({
             name: "th_heater",
             cluster: "msRelativeHumidity",
             attribute: "sprutHeater",
@@ -414,8 +541,8 @@ const sprutModernExtend = {
             zigbeeCommandOptions: manufacturerOptions,
             ...args,
         }),
-    sprutOccupancyLevel: (args?: Partial<m.NumericArgs<"msOccupancySensing">>) =>
-        m.numeric({
+    sprutOccupancyLevel: (args?: Partial<m.NumericArgs<"msOccupancySensing", SprutMsOccupancySensing>>) =>
+        m.numeric<"msOccupancySensing", SprutMsOccupancySensing>({
             name: "occupancy_level",
             cluster: "msOccupancySensing",
             attribute: "sprutOccupancyLevel",
@@ -438,8 +565,8 @@ const sprutModernExtend = {
             entityCategory: "config",
             ...args,
         }),
-    sprutOccupancySensitivity: (args?: Partial<m.NumericArgs<"msOccupancySensing">>) =>
-        m.numeric({
+    sprutOccupancySensitivity: (args?: Partial<m.NumericArgs<"msOccupancySensing", SprutMsOccupancySensing>>) =>
+        m.numeric<"msOccupancySensing", SprutMsOccupancySensing>({
             name: "occupancy_sensitivity",
             cluster: "msOccupancySensing",
             attribute: "sprutOccupancySensitivity",
@@ -581,6 +708,10 @@ const {
     addSprutVocCluster,
     addSprutNoiseCluster,
     addSprutIrBlasterCluster,
+    addSprutMsRelativeHumidityCluster,
+    addSprutMsOccupancySensingCluster,
+    addSprutMsTemperatureMeasurementCluster,
+    addSprutMsCO2Cluster,
     sprutActivityIndicator,
     sprutIsConnected,
     sprutUartBaudRate,
@@ -717,7 +848,12 @@ export const definitions: DefinitionWithExtend[] = [
             await reporting.humidity(endpoint1);
             await reporting.occupancy(endpoint1);
 
-            let payload = reporting.payload<"msOccupancySensing">("sprutOccupancyLevel", 10, constants.repInterval.MINUTE, 5);
+            let payload = reporting.payload<"msOccupancySensing", SprutMsOccupancySensing>(
+                "sprutOccupancyLevel",
+                10,
+                constants.repInterval.MINUTE,
+                5,
+            );
             await endpoint1.configureReporting("msOccupancySensing", payload, manufacturerOptions);
 
             payload = reporting.payload<"sprutNoise", SprutNoise>("noise", 10, constants.repInterval.MINUTE, 5);
@@ -737,7 +873,16 @@ export const definitions: DefinitionWithExtend[] = [
         },
         meta: {multiEndpoint: true, multiEndpointSkip: ["humidity"]},
         ota: true,
-        extend: [addSprutVocCluster(), addSprutNoiseCluster(), addSprutIrBlasterCluster(), m.illuminance()],
+        extend: [
+            addSprutVocCluster(),
+            addSprutNoiseCluster(),
+            addSprutIrBlasterCluster(),
+            addSprutMsRelativeHumidityCluster(),
+            addSprutMsOccupancySensingCluster(),
+            addSprutMsTemperatureMeasurementCluster(),
+            addSprutMsCO2Cluster(),
+            m.illuminance(),
+        ],
     },
     {
         zigbeeModel: ["WBMSW4"],
@@ -748,27 +893,40 @@ export const definitions: DefinitionWithExtend[] = [
             addSprutVocCluster(),
             addSprutNoiseCluster(),
             addSprutIrBlasterCluster(),
+            addSprutMsRelativeHumidityCluster(),
+            addSprutMsOccupancySensingCluster(),
+            addSprutMsTemperatureMeasurementCluster(),
+            addSprutMsCO2Cluster(),
             m.deviceAddCustomCluster("genBasic", {
+                name: "genBasic",
                 ID: 0,
                 attributes: {
-                    deviceVersion: {ID: 26113, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
-                    deviceSignature: {ID: 26114, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
-                    deviceBootVersion: {ID: 26115, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
-                    componentVersion: {ID: 26117, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
-                    componentSignature: {ID: 26118, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
+                    deviceVersion: {name: "deviceVersion", ID: 26113, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
+                    deviceSignature: {name: "deviceSignature", ID: 26114, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
+                    deviceBootVersion: {name: "deviceBootVersion", ID: 26115, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
+                    componentVersion: {name: "componentVersion", ID: 26117, type: Zcl.DataType.CHAR_STR, manufacturerCode: sprutCode, write: true},
+                    componentSignature: {
+                        name: "componentSignature",
+                        ID: 26118,
+                        type: Zcl.DataType.CHAR_STR,
+                        manufacturerCode: sprutCode,
+                        write: true,
+                    },
                 },
                 commands: {},
                 commandsResponse: {},
             }),
             m.deviceAddCustomCluster("sprutDevice", {
+                name: "sprutDevice",
                 ID: 26112,
                 manufacturerCode: Zcl.ManufacturerCode.CUSTOM_SPRUT_DEVICE,
                 attributes: {
-                    isConnected: {ID: 26116, type: Zcl.DataType.BOOLEAN, write: true},
-                    UartBaudRate: {ID: 26113, type: Zcl.DataType.UINT32, write: true, max: 0xffffffff},
+                    isConnected: {name: "isConnected", ID: 26116, type: Zcl.DataType.BOOLEAN, write: true},
+                    UartBaudRate: {name: "UartBaudRate", ID: 26113, type: Zcl.DataType.UINT32, write: true, max: 0xffffffff},
                 },
                 commands: {
                     debug: {
+                        name: "debug",
                         ID: 103,
                         parameters: [{name: "data", type: Zcl.DataType.UINT8, max: 0xff}],
                     },
