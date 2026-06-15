@@ -2323,7 +2323,7 @@ const definitions: Definition[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint('TS0601', ['_TZE204_ojtqawav']),
+        fingerprint: tuya.fingerprint('TS0601', ['_TZE204_ojtqawav', '_TZE284_lnyz4a6v']),
         model: 'TS0601_switch_1_gang',
         vendor: 'TuYa',
         description: '1 gang switch',
@@ -2357,7 +2357,7 @@ const definitions: Definition[] = [
         },
     },
     {
-        fingerprint: tuya.fingerprint('TS0601', ['_TZE200_nkjintbl', '_TZE200_ji1gn7rw', '_TZE200_3t91nb6k', '_TZE204_wvovwe9h', '_TZE204_3t91nb6k']),
+        fingerprint: tuya.fingerprint('TS0601', ['_TZE200_nkjintbl', '_TZE200_ji1gn7rw', '_TZE200_3t91nb6k', '_TZE204_wvovwe9h', '_TZE204_3t91nb6k', '_TZE284_dmckrsxg']),
         model: 'TS0601_switch_2_gang',
         vendor: 'TuYa',
         description: '2 gang switch',
@@ -2404,7 +2404,8 @@ const definitions: Definition[] = [
             {modelID: 'TS0601', manufacturerName: '_TZE200_2hf7x9n3'},
             {modelID: 'TS0601', manufacturerName: '_TZE204_atpwqgml'},
             {modelID: 'TS0601', manufacturerName: '_TZE200_bynnczcb'},
-            {modelID: 'TS0601', manufacturerName: '_TZE200_atpwqgml'}],
+            {modelID: 'TS0601', manufacturerName: '_TZE200_atpwqgml'},
+            {modelID: 'TS0601', manufacturerName: '_TZE284_e4pf6l87'}],
         model: 'TS0601_switch_3_gang',
         vendor: 'TuYa',
         description: '3 gang switch',
